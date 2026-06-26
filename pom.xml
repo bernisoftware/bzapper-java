@@ -11,7 +11,7 @@
 
   <name>bZapper Java SDK</name>
   <description>Official Java SDK for the bZapper WhatsApp gateway API.</description>
-  <url>https://github.com/bernisoftware/bzapper</url>
+  <url>https://github.com/bernisoftware/bzapper-java</url>
 
   <licenses>
     <license>
@@ -35,9 +35,9 @@
   </developers>
 
   <scm>
-    <connection>scm:git:https://github.com/bernisoftware/bzapper.git</connection>
-    <developerConnection>scm:git:git@github.com:bernisoftware/bzapper.git</developerConnection>
-    <url>https://github.com/bernisoftware/bzapper</url>
+    <connection>scm:git:https://github.com/bernisoftware/bzapper-java.git</connection>
+    <developerConnection>scm:git:git@github.com:bernisoftware/bzapper-java.git</developerConnection>
+    <url>https://github.com/bernisoftware/bzapper-java</url>
   </scm>
 
   <properties>
@@ -104,4 +104,40 @@
       </plugin>
     </plugins>
   </build>
+
+  <!-- Publicação no Maven Central (Sonatype Central Portal). Ative com -P release.
+       Requer: namespace com.bernisoftware verificado no Central Portal, chave GPG,
+       e credenciais. Ver clients/PUBLISHING.md (seção Java). O CI usa `mvn deploy -P release`. -->
+  <profiles>
+    <profile>
+      <id>release</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-gpg-plugin</artifactId>
+            <version>3.2.4</version>
+            <executions>
+              <execution>
+                <id>sign-artifacts</id>
+                <phase>verify</phase>
+                <goals><goal>sign</goal></goals>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.sonatype.central</groupId>
+            <artifactId>central-publishing-maven-plugin</artifactId>
+            <version>0.6.0</version>
+            <extensions>true</extensions>
+            <configuration>
+              <publishingServerId>central</publishingServerId>
+              <autoPublish>true</autoPublish>
+              <waitUntil>published</waitUntil>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>
