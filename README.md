@@ -9,11 +9,11 @@ multi-tenant WhatsApp gateway with a REST HTTP API.
 
 ## Install
 
-Maven (`com.bernisoftware:bzapper`):
+Maven (`br.com.bernisoftware:bzapper`):
 
 ```xml
 <dependency>
-  <groupId>com.bernisoftware</groupId>
+  <groupId>br.com.bernisoftware</groupId>
   <artifactId>bzapper</artifactId>
   <version>0.1.0</version>
 </dependency>
@@ -22,7 +22,7 @@ Maven (`com.bernisoftware:bzapper`):
 Gradle:
 
 ```kotlin
-implementation("com.bernisoftware:bzapper:0.1.0")
+implementation("br.com.bernisoftware:bzapper:0.3.0")
 ```
 
 ## Hello world
