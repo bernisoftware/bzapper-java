@@ -133,7 +133,10 @@
             <configuration>
               <publishingServerId>central</publishingServerId>
               <autoPublish>true</autoPublish>
-              <waitUntil>published</waitUntil>
+              <!-- 'uploaded' (não 'published') evita o polling da resposta de status,
+                   que no plugin 0.6.0 quebra ao ler o campo novo "warnings" do Central.
+                   autoPublish=true publica sozinho assim mesmo. -->
+              <waitUntil>uploaded</waitUntil>
             </configuration>
           </plugin>
         </plugins>
