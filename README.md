@@ -214,6 +214,65 @@ Map<String, Object> usage = client.getUsage("2026-01-01T00:00:00Z", "2026-02-01T
 Map<String, Object> all   = client.getUsage(null, null);
 ```
 
+## Webhooks
+
+**Manage** your webhook subscriptions through the client. `createWebhook` returns
+the webhook plus its signing `secret` **once** — store it now, you'll need it to
+verify deliveries.
+
+```java
+import java.util.List;
+import java.util.Map;
+
+// POST /webhooks — subscribe an endpoint to specific events (null/empty = all)
+Map<String, Object> hook = client.createWebhook(
+        "https://yourapp.com/webhooks/bzapper",
+        null,                                          // secret: null = API generates one
+        List.of("message.received", "message.read"),   // event_types
+        null);                                         // number_filter (an instance_id)
+String secret = (String) hook.get("secret");           // shown ONCE
+String id = (String) hook.get("id");
+
+client.listWebhooks();                                          // GET /webhooks
+client.updateWebhook(id, null, null, null, null, false);        // pause (active=false)
+client.updateWebhook(id, null, "regenerate", null, null, null); // rotate the secret
+client.testWebhook(id, "message.received");                     // POST /webhooks/{id}/test
+client.webhookDeliveries(id, 20);                               // GET /webhooks/{id}/deliveries
+client.deleteWebhook(id);                                       // DELETE /webhooks/{id}
+```
+
+**Receive and process** deliveries with `com.bernisoftware.bzapper.webhooks.Webhooks`.
+It verifies the HMAC-SHA256 signature (timing-safe, over the **raw** body bytes),
+parses the envelope into a typed `WebhookEvent`, and dispatches to your handlers.
+
+```java
+import com.bernisoftware.bzapper.webhooks.Webhooks;
+import com.bernisoftware.bzapper.webhooks.WebhookEvent;
+import com.bernisoftware.bzapper.webhooks.WebhookSignatureException;
+
+Webhooks hooks = new Webhooks(secret);  // the secret from createWebhook
+
+hooks.on("message.received", event -> {
+    System.out.println(event.sender().name() + ": " + event.payload().get("body"));
+});
+hooks.onAny(event -> log.info("event {} ({})", event.id(), event.type()));
+
+// In your HTTP endpoint (servlet / Spring / Javalin — framework-agnostic).
+// Pass the EXACT raw bytes received and the signature header; never re-serialized JSON.
+byte[] rawBody = readRequestBody(request);              // your framework's raw body
+String signature = request.getHeader(Webhooks.SIGNATURE_HEADER); // "X-Bzapper-Signature"
+try {
+    WebhookEvent event = hooks.handle(rawBody, signature); // verify + parse + dispatch
+    // event.id() is stable — store it to skip duplicate retries (idempotency).
+} catch (WebhookSignatureException e) {
+    response.setStatus(400);  // bad signature — do NOT process
+}
+```
+
+Need verification without dispatch? Use `hooks.verify(rawBody, signature)` (boolean)
+or `hooks.constructEvent(rawBody, signature)` (verifies + parses to a `WebhookEvent`,
+throwing `WebhookSignatureException` on a bad signature).
+
 ## Error handling
 
 Non-2xx responses throw `BzapperException`. The error body is

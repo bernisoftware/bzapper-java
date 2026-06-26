@@ -603,6 +603,90 @@ public final class BzapperClient {
     }
 
     // ------------------------------------------------------------------
+    // Webhooks (management; to RECEIVE + process events use
+    // com.bernisoftware.bzapper.webhooks.Webhooks)
+    // ------------------------------------------------------------------
+
+    /** {@code GET /webhooks} — list the project's webhooks. */
+    public Map<String, Object> listWebhooks() {
+        return getMap("/webhooks");
+    }
+
+    /**
+     * {@code POST /webhooks} — create a webhook.
+     *
+     * <p>The response carries the webhook plus its {@code secret} <b>once</b> (when
+     * one was generated). Keep it: it's the signing secret for
+     * {@link com.bernisoftware.bzapper.webhooks.Webhooks}.
+     *
+     * @param url          HTTPS endpoint that will receive the deliveries (required)
+     * @param secret       omit ({@code null}) to let the API generate a strong one
+     * @param eventTypes   subscribed events; null/empty = all. Each event can belong
+     *                     to a single webhook (409 on conflict)
+     * @param numberFilter optional {@code instance_id} to restrict to one number; null to omit
+     */
+    public Map<String, Object> createWebhook(String url, String secret,
+                                             List<String> eventTypes, String numberFilter) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("url", url);
+        if (secret != null) payload.put("secret", secret);
+        if (eventTypes != null) payload.put("event_types", eventTypes);
+        if (numberFilter != null) payload.put("number_filter", numberFilter);
+        return postMap("/webhooks", payload);
+    }
+
+    /** {@code POST /webhooks} — create a webhook subscribed to all events with a generated secret. */
+    public Map<String, Object> createWebhook(String url) {
+        return createWebhook(url, null, null, null);
+    }
+
+    /**
+     * {@code PATCH /webhooks/{id}} — update or pause a webhook. All arguments are
+     * optional; pass {@code null} to leave a field unchanged.
+     *
+     * @param secret pass {@code "regenerate"} to rotate the signing secret
+     * @param active {@code false} pauses the webhook, {@code true} re-enables it
+     */
+    public Map<String, Object> updateWebhook(String id, String url, String secret,
+                                             List<String> eventTypes, String numberFilter, Boolean active) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        if (url != null) payload.put("url", url);
+        if (secret != null) payload.put("secret", secret);
+        if (eventTypes != null) payload.put("event_types", eventTypes);
+        if (numberFilter != null) payload.put("number_filter", numberFilter);
+        if (active != null) payload.put("active", active);
+        return requestMap("PATCH", "/webhooks/" + enc(id), payload);
+    }
+
+    /** {@code DELETE /webhooks/{id}} — delete a webhook. */
+    public void deleteWebhook(String id) {
+        request("DELETE", "/webhooks/" + enc(id), null, Void.class);
+    }
+
+    /**
+     * {@code POST /webhooks/{id}/test} — send a test delivery and return the
+     * endpoint's HTTP status.
+     *
+     * @param eventType optional event type to simulate; null for the server default
+     */
+    public Map<String, Object> testWebhook(String id, String eventType) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        if (eventType != null) payload.put("event_type", eventType);
+        return postMap("/webhooks/" + enc(id) + "/test", payload);
+    }
+
+    /**
+     * {@code GET /webhooks/{id}/deliveries} — recent delivery attempts for a webhook.
+     *
+     * @param limit optional cap on results; null for the server default
+     */
+    public Map<String, Object> webhookDeliveries(String id, Integer limit) {
+        String path = "/webhooks/" + enc(id) + "/deliveries";
+        if (limit != null) path += "?limit=" + limit;
+        return getMap(path);
+    }
+
+    // ------------------------------------------------------------------
     // Internals
     // ------------------------------------------------------------------
 
@@ -627,6 +711,15 @@ public final class BzapperClient {
     @SuppressWarnings("unchecked")
     private Map<String, Object> getMap(String path) {
         return request("GET", path, null, Map.class);
+    }
+
+    private Map<String, Object> postMap(String path, Object body) {
+        return requestMap("POST", path, body);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> requestMap(String method, String path, Object body) {
+        return request(method, path, body, Map.class);
     }
 
     private <T> T request(String method, String path, Object body, Class<T> type) {
