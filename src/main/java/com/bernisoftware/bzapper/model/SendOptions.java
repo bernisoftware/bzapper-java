@@ -20,31 +20,32 @@ public record SendOptions(
         @JsonProperty("quoted_message_id") String quotedMessageId,
         @JsonProperty("client_reference") String clientReference,
         @JsonProperty("mentions") List<String> mentions,
-        @JsonProperty("sticky") Boolean sticky) {
+        @JsonProperty("sticky") Boolean sticky,
+        @JsonProperty("scheduled_at") String scheduledAt) {
 
     /** Start from a destination (E.164 phone or JID). */
     public static SendOptions to(String to) {
-        return new SendOptions(to, null, null, null, null, null, null);
+        return new SendOptions(to, null, null, null, null, null, null, null);
     }
 
     public SendOptions withInstanceId(String instanceId) {
-        return new SendOptions(to, instanceId, poolId, quotedMessageId, clientReference, mentions, sticky);
+        return new SendOptions(to, instanceId, poolId, quotedMessageId, clientReference, mentions, sticky, scheduledAt);
     }
 
     public SendOptions withPoolId(String poolId) {
-        return new SendOptions(to, instanceId, poolId, quotedMessageId, clientReference, mentions, sticky);
+        return new SendOptions(to, instanceId, poolId, quotedMessageId, clientReference, mentions, sticky, scheduledAt);
     }
 
     public SendOptions withQuotedMessageId(String quotedMessageId) {
-        return new SendOptions(to, instanceId, poolId, quotedMessageId, clientReference, mentions, sticky);
+        return new SendOptions(to, instanceId, poolId, quotedMessageId, clientReference, mentions, sticky, scheduledAt);
     }
 
     public SendOptions withClientReference(String clientReference) {
-        return new SendOptions(to, instanceId, poolId, quotedMessageId, clientReference, mentions, sticky);
+        return new SendOptions(to, instanceId, poolId, quotedMessageId, clientReference, mentions, sticky, scheduledAt);
     }
 
     public SendOptions withMentions(List<String> mentions) {
-        return new SendOptions(to, instanceId, poolId, quotedMessageId, clientReference, mentions, sticky);
+        return new SendOptions(to, instanceId, poolId, quotedMessageId, clientReference, mentions, sticky, scheduledAt);
     }
 
     /**
@@ -52,6 +53,15 @@ public record SendOptions(
      * talking to {@code to}. Defaults to true server-side; set false to force rotation.
      */
     public SendOptions withSticky(Boolean sticky) {
-        return new SendOptions(to, instanceId, poolId, quotedMessageId, clientReference, mentions, sticky);
+        return new SendOptions(to, instanceId, poolId, quotedMessageId, clientReference, mentions, sticky, scheduledAt);
+    }
+
+    /**
+     * Schedule the send for a future RFC3339 timestamp. The number is picked at send
+     * time. Max lead: Free 24h, Pro 30 days, 1 year with the extended-scheduling
+     * add-on. Returns status {@code scheduled}. OTP cannot be scheduled.
+     */
+    public SendOptions withScheduledAt(String scheduledAt) {
+        return new SendOptions(to, instanceId, poolId, quotedMessageId, clientReference, mentions, sticky, scheduledAt);
     }
 }

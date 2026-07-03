@@ -264,6 +264,133 @@ public final class BzapperClient {
     }
 
     // ------------------------------------------------------------------
+    // Scheduled sends (scheduled_at on any send)
+    // ------------------------------------------------------------------
+
+    /** {@code GET /messages/scheduled} — list pending/recent scheduled sends. */
+    public Map<String, Object> listScheduled() {
+        return getMap("/messages/scheduled");
+    }
+
+    /** {@code DELETE /messages/scheduled/{id}} — cancel a pending scheduled send. */
+    public Map<String, Object> cancelScheduled(String scheduledId) {
+        return requestMap("DELETE", "/messages/scheduled/" + enc(scheduledId), null);
+    }
+
+    // ------------------------------------------------------------------
+    // Campaigns (Pro + campaigns add-on)
+    // ------------------------------------------------------------------
+
+    /**
+     * {@code POST /campaigns} — create a campaign with template variations.
+     * Requires the Pro plan and the Campaigns add-on. Each variation body accepts
+     * {@code {variables}} and spintax {@code {a|b|c}}. {@code params} carries
+     * {@code variations} (required) plus optional {@code name}, {@code pool_id},
+     * {@code pacing_profile} and {@code start_at}.
+     */
+    public Map<String, Object> createCampaign(Map<String, Object> params) {
+        return postMap("/campaigns", params);
+    }
+
+    /** {@code GET /campaigns} — list the project's campaigns. */
+    public Map<String, Object> listCampaigns() {
+        return getMap("/campaigns");
+    }
+
+    /** {@code GET /campaigns/{id}} — campaign with stats. */
+    public Map<String, Object> getCampaign(String id) {
+        return getMap("/campaigns/" + enc(id));
+    }
+
+    /**
+     * {@code PATCH /campaigns/{id}} — edit a not-yet-started campaign. Only allowed
+     * while the campaign is draft/scheduled (409 once started). {@code body} carries
+     * any of {@code name}, {@code pool_id}, {@code pacing_profile}, {@code start_at}
+     * and {@code variations} (when sent, it replaces the existing variations).
+     */
+    public Map<String, Object> updateCampaign(String id, Map<String, Object> body) {
+        return requestMap("PATCH", "/campaigns/" + enc(id), body);
+    }
+
+    /**
+     * {@code GET /campaigns/estimate} — live send estimate for a recipient count and
+     * pacing (no campaign needed); powers the builder's real-time panel. All params
+     * are optional; pass {@code null} to omit.
+     *
+     * @param recipients number of recipients; null to omit
+     * @param pacing     {@code "conservative"} or {@code "normal"}; null to omit
+     * @param poolId     restrict to a pool's numbers; null for all project numbers
+     * @return an estimate map {@code {recipients, numbers_available, estimated_seconds, estimated_human}}
+     */
+    public Map<String, Object> estimateCampaign(Integer recipients, String pacing, String poolId) {
+        StringBuilder path = new StringBuilder("/campaigns/estimate");
+        List<String> q = new ArrayList<>();
+        if (recipients != null) q.add("recipients=" + recipients);
+        if (pacing != null) q.add("pacing=" + enc(pacing));
+        if (poolId != null) q.add("pool_id=" + enc(poolId));
+        if (!q.isEmpty()) path.append('?').append(String.join("&", q));
+        return getMap(path.toString());
+    }
+
+    /**
+     * {@code POST /campaigns/{id}/recipients} — add (or replace) recipients. Combine
+     * as needed; {@code body} carries any of:
+     * <ul>
+     *   <li>{@code recipients} — a list of {@code {phone, payload}} objects;</li>
+     *   <li>{@code contacts} — a map of phone to payload;</li>
+     *   <li>{@code contact_ids} — a list of explicit contact ids (only active ones are added);</li>
+     *   <li>{@code contact_filter} — a map selecting every ACTIVE contact matching a filter:
+     *       {@code search}, {@code tags} (list), {@code tags_all} (bool, require all),
+     *       {@code groups} (list), {@code city}, {@code state}, {@code country},
+     *       {@code has_email} (bool);</li>
+     *   <li>{@code replace} — a bool that replaces the whole recipient list instead of
+     *       appending (draft/scheduled only).</li>
+     * </ul>
+     * For {@code contact_ids}/{@code contact_filter} phones are resolved server-side,
+     * restricted to active contacts, and re-checked against suppression.
+     */
+    public Map<String, Object> addCampaignRecipients(String id, Map<String, Object> body) {
+        return postMap("/campaigns/" + enc(id) + "/recipients", body);
+    }
+
+    /**
+     * {@code GET /campaigns/{id}/recipients} — list recipients with per-contact
+     * delivery. Each item carries {@code id}, {@code phone}, {@code contact_name}
+     * (resolved from the contact base), {@code status}
+     * ({@code pending|claimed|sent|failed|suppressed}), {@code delivery}
+     * (real WhatsApp receipt state: {@code ''|sent|delivered|read}),
+     * {@code message_id} and {@code last_error}.
+     */
+    public Map<String, Object> listCampaignRecipients(String id) {
+        return getMap("/campaigns/" + enc(id) + "/recipients");
+    }
+
+    /** {@code POST /campaigns/{id}/start} — start (or schedule) the campaign. */
+    public Map<String, Object> startCampaign(String id) {
+        return postMap("/campaigns/" + enc(id) + "/start", null);
+    }
+
+    /** {@code POST /campaigns/{id}/pause} — pause the campaign. */
+    public Map<String, Object> pauseCampaign(String id) {
+        return postMap("/campaigns/" + enc(id) + "/pause", null);
+    }
+
+    /** {@code POST /campaigns/{id}/resume} — resume the campaign. */
+    public Map<String, Object> resumeCampaign(String id) {
+        return postMap("/campaigns/" + enc(id) + "/resume", null);
+    }
+
+    /** {@code POST /campaigns/{id}/cancel} — cancel the campaign. */
+    public Map<String, Object> cancelCampaign(String id) {
+        return postMap("/campaigns/" + enc(id) + "/cancel", null);
+    }
+
+    /** {@code POST /campaigns/{id}/dry-run} — simulate without sending. */
+    public Map<String, Object> dryRunCampaign(String id) {
+        return postMap("/campaigns/" + enc(id) + "/dry-run", null);
+    }
+
+    // ------------------------------------------------------------------
     // Instances
     // ------------------------------------------------------------------
 
@@ -701,6 +828,7 @@ public final class BzapperClient {
         if (options.clientReference() != null) m.put("client_reference", options.clientReference());
         if (options.mentions() != null) m.put("mentions", options.mentions());
         if (options.sticky() != null) m.put("sticky", options.sticky());
+        if (options.scheduledAt() != null) m.put("scheduled_at", options.scheduledAt());
         return m;
     }
 
