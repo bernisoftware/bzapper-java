@@ -45,7 +45,7 @@ import java.util.Objects;
  * runtime dependencies. Construct directly or via {@link #builder(String, String)}:
  *
  * <pre>{@code
- * BzapperClient client = new BzapperClient("https://api.bzapper.com.br", "bz_live_...");
+ * BzapperClient client = new BzapperClient("bz_live_..."); // points at production
  * SentMessage msg = client.sendText(SendOptions.to("+5511999999999"), "Hello!");
  * }</pre>
  *
@@ -56,6 +56,9 @@ import java.util.Objects;
  */
 public final class BzapperClient {
 
+    /** Production API base URL. Used by default; override only in dev/self-host. */
+    public static final String DEFAULT_BASE_URL = "https://api.bzapper.com.br";
+
     private final String baseUrl;
     private final String apiKey;
     private final String locale;
@@ -64,7 +67,18 @@ public final class BzapperClient {
     private final ObjectMapper mapper;
 
     /**
-     * Creates a client with default options (no locale, 30s timeout).
+     * Creates a client pointing at the production API — pass just your API key.
+     * This is the recommended constructor.
+     *
+     * @param apiKey tenant API key, e.g. {@code bz_live_...}
+     */
+    public BzapperClient(String apiKey) {
+        this(builder(apiKey));
+    }
+
+    /**
+     * Creates a client with an explicit base URL. Prefer {@link #BzapperClient(String)}
+     * (which defaults to production); use this only for dev/self-host.
      *
      * @param baseUrl base API URL, e.g. {@code https://api.bzapper.com.br} or
      *                {@code http://localhost:8080}
@@ -88,6 +102,12 @@ public final class BzapperClient {
                 .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     }
 
+    /** Builder pointing at the production API — pass just your API key (recommended). */
+    public static Builder builder(String apiKey) {
+        return new Builder(DEFAULT_BASE_URL, apiKey);
+    }
+
+    /** Builder with an explicit base URL (dev/self-host). Prefer {@link #builder(String)}. */
     public static Builder builder(String baseUrl, String apiKey) {
         return new Builder(baseUrl, apiKey);
     }

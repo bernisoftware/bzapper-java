@@ -30,13 +30,17 @@ import java.util.List;
 public class QuickStart {
 
     public static void main(String[] args) {
-        String baseUrl = envOr("BZAPPER_BASE_URL", "http://localhost:8080");
         String apiKey = envOr("BZAPPER_API_KEY", "bz_live_xxx");
+        String baseUrl = System.getenv("BZAPPER_BASE_URL"); // opcional: sem isto, aponta para produção
         String to = envOr("BZAPPER_TO", "+5511999999999");
         String instanceId = envOr("BZAPPER_INSTANCE_ID", "inst-uuid");
         String groupJid = envOr("BZAPPER_GROUP_JID", "123456789-987654@g.us");
 
-        BzapperClient client = BzapperClient.builder(baseUrl, apiKey)
+        // builder(apiKey) aponta para produção; builder(baseUrl, apiKey) só p/ dev/self-host.
+        BzapperClient.Builder builder = (baseUrl == null || baseUrl.isBlank())
+                ? BzapperClient.builder(apiKey)
+                : BzapperClient.builder(baseUrl, apiKey);
+        BzapperClient client = builder
                 .locale("pt-BR")
                 .timeout(Duration.ofSeconds(30))
                 .build();

@@ -15,15 +15,18 @@ Maven (`br.com.bernisoftware:bzapper`):
 <dependency>
   <groupId>br.com.bernisoftware</groupId>
   <artifactId>bzapper</artifactId>
-  <version>0.1.0</version>
+  <version>0.5.0</version>
 </dependency>
 ```
 
 Gradle:
 
 ```kotlin
-implementation("br.com.bernisoftware:bzapper:0.3.0")
+implementation("br.com.bernisoftware:bzapper:0.5.0")
 ```
+
+The SDK's **only** runtime dependency is **Jackson**, pulled in **transitively** — you
+add nothing else (no Gson, no OkHttp, no manual dependencies). Requires **Java 17+**.
 
 ## Hello world
 
@@ -32,11 +35,14 @@ import com.bernisoftware.bzapper.BzapperClient;
 import com.bernisoftware.bzapper.model.SendOptions;
 import com.bernisoftware.bzapper.model.SentMessage;
 
-BzapperClient client = new BzapperClient("https://api.bzapper.com.br", "bz_live_...");
+BzapperClient client = new BzapperClient("bz_live_...");
 
 SentMessage msg = client.sendText(SendOptions.to("+5511999999999"), "Hello from bZapper!");
 System.out.println(msg.messageId());
 ```
+
+The base URL defaults to `https://api.bzapper.com.br`. Passing one is optional —
+only for dev or self-hosting: `new BzapperClient("http://localhost:8080", "bz_live_...")`.
 
 ## Configuration
 
@@ -45,11 +51,14 @@ Use the constructor for the defaults, or the builder for `locale` and `timeout`:
 ```java
 import java.time.Duration;
 
-BzapperClient client = BzapperClient.builder("http://localhost:8080", "bz_live_...")
+BzapperClient client = BzapperClient.builder("bz_live_...")
         .locale("pt-BR")                  // sent as Accept-Language
         .timeout(Duration.ofSeconds(30))  // per-request timeout
         .build();
 ```
+
+The 1-arg `builder(apiKey)` defaults the base URL to production. For dev/self-host,
+use the 2-arg `builder(baseUrl, apiKey)` (e.g. `builder("http://localhost:8080", "bz_live_...")`).
 
 Every request sends:
 
