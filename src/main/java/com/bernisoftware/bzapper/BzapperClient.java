@@ -414,9 +414,21 @@ public final class BzapperClient {
     // Instances
     // ------------------------------------------------------------------
 
-    /** {@code GET /instances} — list the tenant's numbers. Returns the parsed body. */
+    /** {@code GET /instances} — list the tenant's numbers (active project). Returns the parsed body. */
     public Map<String, Object> listInstances() {
-        return getMap("/instances");
+        return listInstances(null);
+    }
+
+    /**
+     * {@code GET /instances} — list the tenant's numbers, scoped by project.
+     *
+     * @param projectId a project id, or {@code "all"} for every number in the
+     *                  account; {@code null} to use the active project (X-Project-Id).
+     */
+    public Map<String, Object> listInstances(String projectId) {
+        String path = "/instances";
+        if (projectId != null) path += "?project_id=" + enc(projectId);
+        return getMap(path);
     }
 
     /** {@code POST /instances} — create an instance (number). */
@@ -654,10 +666,25 @@ public final class BzapperClient {
      * @param limit      optional cap on results; null for the default
      */
     public Map<String, Object> listContacts(String search, String projectId, Integer limit) {
+        return listContacts(search, projectId, null, limit);
+    }
+
+    /**
+     * {@code GET /contacts} — list the account's contact base with project and number filters.
+     *
+     * @param search      optional name/phone filter; null to omit
+     * @param projectId   optional project filter: a project id or {@code "current"}; null to omit
+     * @param instanceId  optional filter by a number (instance) the contact interacted
+     *                    with — the contact↔number link is maintained automatically by the
+     *                    API; null to omit
+     * @param limit       optional cap on results; null for the default
+     */
+    public Map<String, Object> listContacts(String search, String projectId, String instanceId, Integer limit) {
         StringBuilder path = new StringBuilder("/contacts");
         List<String> q = new ArrayList<>();
         if (search != null) q.add("search=" + enc(search));
         if (projectId != null) q.add("project_id=" + enc(projectId));
+        if (instanceId != null) q.add("instance_id=" + enc(instanceId));
         if (limit != null) q.add("limit=" + limit);
         if (!q.isEmpty()) path.append('?').append(String.join("&", q));
         return getMap(path.toString());
