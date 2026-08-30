@@ -463,6 +463,21 @@ public final class BzapperClient {
         request("POST", "/instances/" + enc(id) + "/disconnect", Map.of(), Void.class);
     }
 
+    /**
+     * {@code POST /instances/{id}/clear-session} — wipe the paired device
+     * credential, forcing a clean re-pairing.
+     *
+     * <p>Use it when {@link #connectInstance} will not produce a QR code, or when
+     * pairing is stuck in an inconsistent state: a plain logout only drops the
+     * reference and leaves the old device behind.
+     *
+     * <p>Destructive and irreversible — the number goes offline and must be paired
+     * again by scanning a QR code. Idempotent and safe to retry.
+     */
+    public void clearInstanceSession(String id) {
+        request("POST", "/instances/" + enc(id) + "/clear-session", Map.of(), Void.class);
+    }
+
     // ------------------------------------------------------------------
     // API keys (self-serve)
     // ------------------------------------------------------------------
