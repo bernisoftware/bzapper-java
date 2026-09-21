@@ -14,23 +14,15 @@ import com.bernisoftware.bzapper.model.Instance;
 import com.bernisoftware.bzapper.model.ListSection;
 import com.bernisoftware.bzapper.model.MediaInput;
 import com.bernisoftware.bzapper.model.ParticipantAction;
+import com.bernisoftware.bzapper.model.PartnerConnection;
 import com.bernisoftware.bzapper.model.PresenceState;
 import com.bernisoftware.bzapper.model.Project;
 import com.bernisoftware.bzapper.model.ProfileUpdate;
 import com.bernisoftware.bzapper.model.Role;
 import com.bernisoftware.bzapper.model.SendOptions;
 import com.bernisoftware.bzapper.model.SentMessage;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
-import java.io.IOException;
-import java.net.URI;
-import java.net.URLEncoder;
 import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -59,12 +51,7 @@ public final class BzapperClient {
     /** Production API base URL. Used by default; override only in dev/self-host. */
     public static final String DEFAULT_BASE_URL = "https://api.bzapper.com.br";
 
-    private final String baseUrl;
-    private final String apiKey;
-    private final String locale;
-    private final HttpClient http;
-    private final Duration requestTimeout;
-    private final ObjectMapper mapper;
+    private final HttpTransport transport;
 
     /**
      * Creates a client pointing at the production API — pass just your API key.
@@ -89,17 +76,10 @@ public final class BzapperClient {
     }
 
     private BzapperClient(Builder b) {
-        this.baseUrl = stripTrailingSlash(Objects.requireNonNull(b.baseUrl, "baseUrl"));
-        this.apiKey = Objects.requireNonNull(b.apiKey, "apiKey");
-        this.locale = b.locale;
-        this.requestTimeout = b.timeout != null ? b.timeout : Duration.ofSeconds(30);
-        this.http = b.httpClient != null
-                ? b.httpClient
-                : HttpClient.newBuilder()
-                        .connectTimeout(b.connectTimeout != null ? b.connectTimeout : Duration.ofSeconds(10))
-                        .build();
-        this.mapper = new ObjectMapper()
-                .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        this.transport = new HttpTransport(
+                Objects.requireNonNull(b.baseUrl, "baseUrl"),
+                Objects.requireNonNull(b.apiKey, "apiKey"),
+                b.locale, b.timeout, b.connectTimeout, b.httpClient);
     }
 
     /** Builder pointing at the production API — pass just your API key (recommended). */
@@ -163,7 +143,7 @@ public final class BzapperClient {
     public SentMessage sendText(SendOptions options, String body) {
         Map<String, Object> payload = base(options);
         payload.put("body", body);
-        return post("/messages/text", payload, SentMessage.class);
+        return send("/messages/text", payload, options);
     }
 
     /**
@@ -174,7 +154,7 @@ public final class BzapperClient {
     public SentMessage sendOTP(SendOptions options, String code) {
         Map<String, Object> payload = base(options);
         payload.put("code", code);
-        return post("/messages/otp", payload, SentMessage.class);
+        return send("/messages/otp", payload, options);
     }
 
     /** {@code POST /messages/otp} — send a verification code with custom context text. */
@@ -182,7 +162,7 @@ public final class BzapperClient {
         Map<String, Object> payload = base(options);
         payload.put("code", code);
         payload.put("body", body);
-        return post("/messages/otp", payload, SentMessage.class);
+        return send("/messages/otp", payload, options);
     }
 
     /** {@code POST /messages/image} — send an image (url or base64). */
@@ -213,7 +193,7 @@ public final class BzapperClient {
     private SentMessage sendMedia(String path, SendOptions options, MediaInput media) {
         Map<String, Object> payload = base(options);
         payload.put("media", media);
-        return post(path, payload, SentMessage.class);
+        return send(path, payload, options);
     }
 
     /** {@code POST /messages/location} — send a location pin. */
@@ -224,7 +204,7 @@ public final class BzapperClient {
         payload.put("longitude", longitude);
         if (name != null) payload.put("name", name);
         if (address != null) payload.put("address", address);
-        return post("/messages/location", payload, SentMessage.class);
+        return send("/messages/location", payload, options);
     }
 
     /** {@code POST /messages/contact} — send a contact card (name and/or vCard). */
@@ -232,7 +212,7 @@ public final class BzapperClient {
         Map<String, Object> payload = base(options);
         if (contactName != null) payload.put("contact_name", contactName);
         if (contactVcard != null) payload.put("contact_vcard", contactVcard);
-        return post("/messages/contact", payload, SentMessage.class);
+        return send("/messages/contact", payload, options);
     }
 
     /** {@code POST /messages/poll} — send a poll. {@code selectableCount} may be null (defaults to 1). */
@@ -242,7 +222,7 @@ public final class BzapperClient {
         payload.put("name", name);
         payload.put("options", pollOptions);
         if (selectableCount != null) payload.put("selectable_count", selectableCount);
-        return post("/messages/poll", payload, SentMessage.class);
+        return send("/messages/poll", payload, options);
     }
 
     /** {@code POST /messages/reaction} — react to a message with an emoji. */
@@ -250,7 +230,7 @@ public final class BzapperClient {
         Map<String, Object> payload = base(options);
         payload.put("quoted_message_id", quotedMessageId);
         payload.put("emoji", emoji);
-        return post("/messages/reaction", payload, SentMessage.class);
+        return send("/messages/reaction", payload, options);
     }
 
     /**
@@ -264,7 +244,7 @@ public final class BzapperClient {
         payload.put("body", body);
         if (footer != null) payload.put("footer", footer);
         payload.put("buttons", buttons);
-        return post("/messages/buttons", payload, SentMessage.class);
+        return send("/messages/buttons", payload, options);
     }
 
     /**
@@ -280,7 +260,7 @@ public final class BzapperClient {
         if (footer != null) payload.put("footer", footer);
         if (buttonText != null) payload.put("button_text", buttonText);
         payload.put("sections", sections);
-        return post("/messages/list", payload, SentMessage.class);
+        return send("/messages/list", payload, options);
     }
 
     // ------------------------------------------------------------------
@@ -610,6 +590,17 @@ public final class BzapperClient {
         return request("GET", "/groups/" + enc(jid) + query("instance_id", instanceId), null, Group.class);
     }
 
+    /**
+     * {@code POST /groups/join/preview?instance_id=} — show the group behind an
+     * invite {@code code} (name, topic, size) WITHOUT joining, to confirm before
+     * putting the number in someone else's group.
+     */
+    public Group previewGroupInvite(String instanceId, String code) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("code", code);
+        return post("/groups/join/preview" + query("instance_id", instanceId), payload, Group.class);
+    }
+
     /** {@code POST /groups/join?instance_id=} — join a group via its invite {@code code}. */
     public Group joinGroup(String instanceId, String code) {
         Map<String, Object> payload = new LinkedHashMap<>();
@@ -797,6 +788,24 @@ public final class BzapperClient {
     // ------------------------------------------------------------------
 
     /** {@code GET /webhooks} — list the project's webhooks. */
+    /**
+     * {@code GET /advisories} — list "action required on your integration" notices.
+     *
+     * <p>An advisory means a change on our side requires you to update YOUR code
+     * (an SDK to upgrade, a payload or endpoint that changed). It is never a
+     * changelog: you only receive advisories that affect your account, matched
+     * against the SDK version you run and the features you actually use. The
+     * {@code action} field says what to do.
+     */
+    public Map<String, Object> listAdvisories() {
+        return getMap("/advisories");
+    }
+
+    /** {@code POST /advisories/{id}/read} — dismiss an advisory once handled. */
+    public Map<String, Object> markAdvisoryRead(String advisoryId) {
+        return postMap("/advisories/" + enc(advisoryId) + "/read", null);
+    }
+
     public Map<String, Object> listWebhooks() {
         return getMap("/webhooks");
     }
@@ -876,6 +885,27 @@ public final class BzapperClient {
     }
 
     // ------------------------------------------------------------------
+    // Connected apps (bZapper Connect — partner software using this account)
+    // ------------------------------------------------------------------
+
+    /**
+     * {@code GET /me/connections} — partner apps (bZapper Connect) that operate this
+     * account's WhatsApp, with {@code partnerName}/{@code partnerLogoUrl} filled in.
+     */
+    public List<PartnerConnection> listConnectedApps() {
+        return request("GET", "/me/connections", null, ConnectionList.class).data();
+    }
+
+    /**
+     * {@code DELETE /me/connections/{id}} — disconnect a partner app (admin). The
+     * partner's API key stops working immediately (it then gets 401
+     * {@code connect_revoked}); the account's plan is untouched.
+     */
+    public void revokeConnectedApp(String id) {
+        request("DELETE", "/me/connections/" + enc(id), null, Void.class);
+    }
+
+    // ------------------------------------------------------------------
     // Internals
     // ------------------------------------------------------------------
 
@@ -887,11 +917,21 @@ public final class BzapperClient {
         if (options.instanceId() != null) m.put("instance_id", options.instanceId());
         if (options.poolId() != null) m.put("pool_id", options.poolId());
         if (options.quotedMessageId() != null) m.put("quoted_message_id", options.quotedMessageId());
+        if (options.quotedParticipant() != null) m.put("quoted_participant", options.quotedParticipant());
         if (options.clientReference() != null) m.put("client_reference", options.clientReference());
         if (options.mentions() != null) m.put("mentions", options.mentions());
         if (options.sticky() != null) m.put("sticky", options.sticky());
         if (options.scheduledAt() != null) m.put("scheduled_at", options.scheduledAt());
         return m;
+    }
+
+    /** Send POST: {@code options.idempotencyKey()} goes in the {@code Idempotency-Key} header. */
+    private SentMessage send(String path, Map<String, Object> payload, SendOptions options) {
+        String key = options.idempotencyKey();
+        if (key == null || key.isEmpty()) {
+            return post(path, payload, SentMessage.class);
+        }
+        return transport.request("POST", path, payload, SentMessage.class, Map.of("Idempotency-Key", key));
     }
 
     private <T> T post(String path, Object body, Class<T> type) {
@@ -913,97 +953,15 @@ public final class BzapperClient {
     }
 
     private <T> T request(String method, String path, Object body, Class<T> type) {
-        byte[] payload = serialize(body);
-
-        HttpRequest.Builder rb = HttpRequest.newBuilder()
-                .uri(URI.create(baseUrl + path))
-                .timeout(requestTimeout)
-                .header("Authorization", "Bearer " + apiKey)
-                .header("Accept", "application/json");
-
-        if (locale != null && !locale.isEmpty()) {
-            rb.header("Accept-Language", locale);
-        }
-
-        if (body != null) {
-            rb.header("Content-Type", "application/json");
-            rb.method(method, HttpRequest.BodyPublishers.ofByteArray(payload));
-        } else {
-            rb.method(method, HttpRequest.BodyPublishers.noBody());
-        }
-
-        HttpResponse<byte[]> response;
-        try {
-            response = http.send(rb.build(), HttpResponse.BodyHandlers.ofByteArray());
-        } catch (IOException e) {
-            throw new BzapperException("network_error", "HTTP request failed: " + e.getMessage(),
-                    0, null, e);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new BzapperException("interrupted", "HTTP request interrupted", 0, null, e);
-        }
-
-        int status = response.statusCode();
-        byte[] data = response.body();
-
-        if (status < 200 || status >= 300) {
-            throw toException(status, data);
-        }
-
-        return deserialize(data, type);
-    }
-
-    private byte[] serialize(Object body) {
-        if (body == null) {
-            return new byte[0];
-        }
-        try {
-            return mapper.writeValueAsBytes(body);
-        } catch (IOException e) {
-            throw new BzapperException("serialization_error",
-                    "Failed to serialize request body: " + e.getMessage(), 0, null, e);
-        }
-    }
-
-    private <T> T deserialize(byte[] data, Class<T> type) {
-        if (type == Void.class || data == null || data.length == 0) {
-            return null;
-        }
-        try {
-            return mapper.readValue(data, type);
-        } catch (IOException e) {
-            throw new BzapperException("deserialization_error",
-                    "Failed to parse response body: " + e.getMessage(), 0, null, e);
-        }
-    }
-
-    private BzapperException toException(int status, byte[] data) {
-        String code = "http_error";
-        String message = "HTTP " + status;
-        String errLocale = null;
-        if (data != null && data.length > 0) {
-            try {
-                JsonNode node = mapper.readTree(data);
-                if (node.hasNonNull("code")) code = node.get("code").asText();
-                if (node.hasNonNull("message")) message = node.get("message").asText();
-                if (node.hasNonNull("locale")) errLocale = node.get("locale").asText();
-            } catch (IOException ignored) {
-                // Non-JSON error body; keep generic code/message.
-            }
-        }
-        return new BzapperException(code, message, status, errLocale);
+        return transport.request(method, path, body, type);
     }
 
     private static String enc(String value) {
-        return URLEncoder.encode(value, StandardCharsets.UTF_8);
+        return HttpTransport.enc(value);
     }
 
     /** Builds a single-param query string ({@code "?key=value"}) or {@code ""} when value is null. */
     private static String query(String key, String value) {
         return value == null ? "" : "?" + key + "=" + enc(value);
-    }
-
-    private static String stripTrailingSlash(String url) {
-        return url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
     }
 }

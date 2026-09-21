@@ -13,6 +13,19 @@ public class BzapperException extends RuntimeException {
 
     private static final long serialVersionUID = 1L;
 
+    /**
+     * HTTP 402 — bZapper Connect: the customer's Pro plan is unpaid, so the key issued to
+     * the partner is suspended. Not final: it works again by itself once paid
+     * ({@code connect.resumed}). Don't discard the key.
+     */
+    public static final String CONNECT_SUSPENDED = "connect_suspended";
+
+    /**
+     * HTTP 401 — bZapper Connect: the connection was ended (by the customer, the partner
+     * or account deletion). Final: the key never works again; start a new session.
+     */
+    public static final String CONNECT_REVOKED = "connect_revoked";
+
     private final String code;
     private final int statusCode;
     private final String locale;

@@ -37,6 +37,12 @@ import java.util.function.Consumer;
  * hooks.handle(rawBody, request.getHeader(Webhooks.SIGNATURE_HEADER));
  * }</pre>
  *
+ * <p><b>bZapper Connect partners</b> verify their webhook with this same class (using the
+ * partner webhook secret). Partner deliveries carry the regular envelope plus
+ * {@link WebhookEvent#connection()}, and the lifecycle events
+ * {@link #EVENT_CONNECT_COMPLETED}, {@link #EVENT_CONNECT_SUSPENDED},
+ * {@link #EVENT_CONNECT_RESUMED} and {@link #EVENT_CONNECT_REVOKED}.
+ *
  * <p>Instances are safe to build once and reuse. Register handlers before serving.
  */
 public final class Webhooks {
@@ -49,6 +55,22 @@ public final class Webhooks {
 
     /** Header carrying the event type. */
     public static final String EVENT_TYPE_HEADER = "X-Bzapper-Event-Type";
+
+    /** bZapper Connect: the customer finished (Pro paid + WhatsApp connected); the key works. */
+    public static final String EVENT_CONNECT_COMPLETED = "connect.completed";
+
+    /** bZapper Connect: the customer's Pro is unpaid; the key answers 402 {@code connect_suspended}. */
+    public static final String EVENT_CONNECT_SUSPENDED = "connect.suspended";
+
+    /** bZapper Connect: payment regularized; the key works again. */
+    public static final String EVENT_CONNECT_RESUMED = "connect.resumed";
+
+    /** bZapper Connect: the connection ended; the key answers 401 {@code connect_revoked}. */
+    public static final String EVENT_CONNECT_REVOKED = "connect.revoked";
+
+    /** The Connect lifecycle event types, for reference. */
+    public static final List<String> CONNECT_EVENT_TYPES = List.of(
+            EVENT_CONNECT_COMPLETED, EVENT_CONNECT_SUSPENDED, EVENT_CONNECT_RESUMED, EVENT_CONNECT_REVOKED);
 
     private static final char[] HEX = "0123456789abcdef".toCharArray();
 
@@ -66,7 +88,8 @@ public final class Webhooks {
         }
         this.secretBytes = secret.getBytes(StandardCharsets.UTF_8);
         this.mapper = new ObjectMapper()
-                .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+                .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+                .configure(DeserializationFeature.READ_UNKNOWN_ENUM_VALUES_USING_DEFAULT_VALUE, true);
     }
 
     /**

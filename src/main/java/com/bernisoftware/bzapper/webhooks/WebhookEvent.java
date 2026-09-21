@@ -1,5 +1,6 @@
 package com.bernisoftware.bzapper.webhooks;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -31,8 +32,23 @@ public final class WebhookEvent {
     private final WebhookSender sender;
     private final List<String> mentions;
     private final Map<String, Object> payload;
+    private final WebhookConnection connection;
     private JsonNode raw;
 
+    public WebhookEvent(
+            String id,
+            String type,
+            String timestamp,
+            String instanceId,
+            String clientReference,
+            WebhookGroup group,
+            WebhookSender sender,
+            List<String> mentions,
+            Map<String, Object> payload) {
+        this(id, type, timestamp, instanceId, clientReference, group, sender, mentions, payload, null);
+    }
+
+    @JsonCreator
     public WebhookEvent(
             @JsonProperty("event_id") String id,
             @JsonProperty("event_type") String type,
@@ -42,7 +58,8 @@ public final class WebhookEvent {
             @JsonProperty("group") WebhookGroup group,
             @JsonProperty("sender") WebhookSender sender,
             @JsonProperty("mentions") List<String> mentions,
-            @JsonProperty("payload") Map<String, Object> payload) {
+            @JsonProperty("payload") Map<String, Object> payload,
+            @JsonProperty("connection") WebhookConnection connection) {
         this.id = id != null ? id : "";
         this.type = type != null ? type : "";
         this.timestamp = timestamp;
@@ -52,6 +69,7 @@ public final class WebhookEvent {
         this.sender = sender;
         this.mentions = mentions != null ? mentions : new ArrayList<>();
         this.payload = payload != null ? payload : new LinkedHashMap<>();
+        this.connection = connection;
     }
 
     public String id() {
@@ -88,6 +106,15 @@ public final class WebhookEvent {
 
     public Map<String, Object> payload() {
         return payload;
+    }
+
+    /**
+     * The bZapper Connect connection this event belongs to. Only present on
+     * deliveries to a <b>partner</b> webhook (so the partner knows which of its
+     * customers the event is about); {@code null} on regular webhooks.
+     */
+    public WebhookConnection connection() {
+        return connection;
     }
 
     /** The untouched parsed JSON envelope (set by {@code Webhooks} after parsing). */

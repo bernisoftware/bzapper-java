@@ -76,9 +76,16 @@ SendOptions opts = SendOptions.to("+5511999999999")
         .withInstanceId("inst-uuid")        // pin a specific number (skips rotation)
         .withPoolId("pool-uuid")            // rotate within a pool
         .withQuotedMessageId("wa-msg-id")   // reply / quote
+        .withQuotedParticipant("+5511777777777") // quoted author — groups only, when not in bZapper history
         .withClientReference("order-42")    // echoed back on status events
-        .withMentions(java.util.List.of("5511888888888@s.whatsapp.net"));
+        .withMentions(java.util.List.of("5511888888888@s.whatsapp.net", "+55 11 97777-7777")) // JIDs or phones
+        .withIdempotencyKey("order-42-confirmation"); // Idempotency-Key header: safe retries
 ```
+
+`withIdempotencyKey` (up to 255 chars) is sent as the `Idempotency-Key` header, never in
+the body. Repeating a send with the same key within 24h returns the SAME response without
+sending twice (`409 idempotency_in_progress` while the first is still running;
+`422 idempotency_key_reused` if the body changed).
 
 ## Sending each message type
 
@@ -186,6 +193,7 @@ Map<String, Object> groups = client.listGroups(inst);                         //
 Group g = client.createGroup(inst, "Project X",
         List.of("5511999999999@s.whatsapp.net", "5511888888888@s.whatsapp.net")); // POST /groups
 Group fetched = client.getGroup(g.jid(), inst);                               // GET /groups/{jid}
+Group preview = client.previewGroupInvite(inst, "AbCdEf0123");               // name/size WITHOUT joining
 Group joined = client.joinGroup(inst, "AbCdEf0123");                          // POST /groups/join {code}
 client.updateGroupParticipants(g.jid(), inst, ParticipantAction.ADD,
         List.of("5511777777777@s.whatsapp.net"));                             // add|remove|promote|demote
@@ -282,6 +290,172 @@ Need verification without dispatch? Use `hooks.verify(rawBody, signature)` (bool
 or `hooks.constructEvent(rawBody, signature)` (verifies + parses to a `WebhookEvent`,
 throwing `WebhookSignatureException` on a bad signature).
 
+## bZapper Connect (partners)
+
+bZapper Connect lets **your software's customers** subscribe to bZapper Pro and connect
+their WhatsApp **without leaving your product**. You get back an API key authorized by the
+customer and operate their WhatsApp with the regular `BzapperClient`. The customer stays a
+direct bZapper account; the key only works while their Pro is paid.
+
+The flow:
+
+1. **Backend** — `BzapperPartner.createConnectSession(...)` returns a `sessionToken` (30 min).
+2. **Front-end** — opens the embedded component with that token
+   (`BzapperConnect.open({ session })`); when the customer finishes (Pro paid + WhatsApp
+   connected) it emits `bzapper:complete` with a one-time `code` (10 min).
+3. **Backend** — `exchangeCode(code)` returns the connection with the customer's raw
+   `apiKey` (`bz_live_...`), shown **once**: store it.
+4. **Backend** — `new BzapperClient(apiKey)` to send messages, list numbers, etc.
+
+`BzapperPartner` authenticates with your partner secret (`Authorization: Bearer bz_partner_...`)
+and shares the HTTP, JSON and `BzapperException` handling of `BzapperClient`. **Never ship
+the partner secret to a browser.**
+
+| Method | Endpoint |
+| --- | --- |
+| `me()` | `GET /partner/me` |
+| `createConnectSession(externalId, customer, locale)` | `POST /partner/connect-sessions` |
+| `exchangeCode(code)` | `POST /partner/connect/exchange` |
+| `listConnections(externalId, status)` (both nullable) | `GET /partner/connections` |
+| `getConnection(id)` | `GET /partner/connections/{id}` |
+| `rotateConnectionKey(id)` — new key, the old one stops working | `POST /partner/connections/{id}/rotate-key` |
+| `revokeConnection(id)` — ends it (204); does not cancel the customer's plan | `DELETE /partner/connections/{id}` |
+
+Complete backend (Spring-style; any framework works the same way):
+
+```java
+import com.bernisoftware.bzapper.BzapperClient;
+import com.bernisoftware.bzapper.BzapperException;
+import com.bernisoftware.bzapper.BzapperPartner;
+import com.bernisoftware.bzapper.model.ConnectCustomer;
+import com.bernisoftware.bzapper.model.ConnectSession;
+import com.bernisoftware.bzapper.model.PartnerConnection;
+import com.bernisoftware.bzapper.model.SendOptions;
+import com.bernisoftware.bzapper.webhooks.WebhookSignatureException;
+import com.bernisoftware.bzapper.webhooks.Webhooks;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.Map;
+
+@RestController
+@RequestMapping("/bzapper")
+public class BzapperConnectController {
+
+    private final BzapperPartner partner = new BzapperPartner(System.getenv("BZAPPER_PARTNER_SECRET"));
+    private final Webhooks hooks = new Webhooks(System.getenv("BZAPPER_PARTNER_WEBHOOK_SECRET"));
+    private final CustomerRepository customers; // your persistence
+
+    public BzapperConnectController(CustomerRepository customers) {
+        this.customers = customers;
+
+        // Connect lifecycle — event.connection() says which of YOUR customers it is about.
+        hooks.on(Webhooks.EVENT_CONNECT_COMPLETED, e ->
+                customers.markWhatsappActive(e.connection().externalId()));
+        hooks.on(Webhooks.EVENT_CONNECT_SUSPENDED, e ->   // Pro unpaid: key answers 402 until paid
+                customers.markWhatsappSuspended(e.connection().externalId()));
+        hooks.on(Webhooks.EVENT_CONNECT_RESUMED, e ->     // paid again: the same key works
+                customers.markWhatsappActive(e.connection().externalId()));
+        hooks.on(Webhooks.EVENT_CONNECT_REVOKED, e ->     // final: drop the key
+                customers.clearBzapperKey(e.connection().externalId()));
+
+        // Project events (message.received, instance.status…) of active connections also
+        // arrive here, with the same connection block.
+        hooks.on("message.received", e ->
+                customers.onIncomingMessage(e.connection().externalId(), e.payload()));
+    }
+
+    /** 1. The logged-in customer clicks "Connect WhatsApp": open a session. */
+    @PostMapping("/session")
+    public Map<String, String> session(@AuthenticationPrincipal Customer me) {
+        ConnectSession s = partner.createConnectSession(
+                me.getId(),                                        // your id = external_id
+                ConnectCustomer.of(me.getName(), me.getEmail())
+                        .withCompany(me.getCompanyName())
+                        .withPhone(me.getPhone())                  // E.164, pre-fills the number
+                        .withCountry("BR"),
+                "pt-BR");
+        return Map.of("session", s.sessionToken());               // only the token goes to the browser
+    }
+
+    /** 3. The component emitted bzapper:complete — exchange the code for the key. */
+    @PostMapping("/complete")
+    public ResponseEntity<Void> complete(@AuthenticationPrincipal Customer me,
+                                         @RequestBody Map<String, String> req) {
+        PartnerConnection conn = partner.exchangeCode(req.get("code"));
+        customers.saveBzapperKey(me.getId(), conn.id(), conn.apiKey()); // shown ONCE — encrypt at rest
+        return ResponseEntity.noContent().build();
+    }
+
+    /** 4. Use the customer's key with the regular client. */
+    @PostMapping("/notify")
+    public ResponseEntity<?> notify(@AuthenticationPrincipal Customer me,
+                                    @RequestBody Map<String, String> req) {
+        BzapperClient client = new BzapperClient(customers.bzapperKey(me.getId()));
+        try {
+            client.sendText(SendOptions.to(req.get("to")), req.get("text"));
+            return ResponseEntity.accepted().build();
+        } catch (BzapperException e) {
+            switch (e.getCode()) {
+                case BzapperException.CONNECT_SUSPENDED:   // 402: Pro unpaid — NOT final, keep the key
+                    return ResponseEntity.status(402)
+                            .body(Map.of("error", "Your bZapper plan is pending payment."));
+                case BzapperException.CONNECT_REVOKED:     // 401: connection ended — reconnect
+                    customers.clearBzapperKey(me.getId());
+                    return ResponseEntity.status(409).body(Map.of("error", "Reconnect WhatsApp."));
+                default:
+                    throw e;
+            }
+        }
+    }
+
+    /** Partner webhook: same HMAC verification as regular webhooks, over the RAW body. */
+    @PostMapping("/webhook")
+    public ResponseEntity<Void> webhook(@RequestBody byte[] rawBody,
+                                        @RequestHeader(Webhooks.SIGNATURE_HEADER) String signature) {
+        try {
+            hooks.handle(rawBody, signature); // verify + parse + dispatch (use event.id() for idempotency)
+            return ResponseEntity.ok().build();
+        } catch (WebhookSignatureException e) {
+            return ResponseEntity.badRequest().build(); // bad signature — do NOT process
+        }
+    }
+}
+```
+
+Operating connections:
+
+```java
+import com.bernisoftware.bzapper.model.ConnectionStatus;
+
+partner.me();                                                          // who this secret belongs to
+partner.listConnections("customer-42", null);                          // by your customer id
+partner.listConnections(null, ConnectionStatus.SUSPENDED.value());     // by status
+PartnerConnection c = partner.getConnection("conn-uuid");              // status, account, numbers
+PartnerConnection rotated = partner.rotateConnectionKey("conn-uuid");  // rotated.apiKey(): new key, once
+partner.revokeConnection("conn-uuid");                                 // 204; sends connect.revoked
+```
+
+`ConnectionStatus`: `PENDING_ACCOUNT`, `PENDING_PAYMENT`, `PENDING_NUMBER`, `ACTIVE` (the key
+works), `SUSPENDED` (Pro unpaid → 402 `connect_suspended`, resumes by itself once paid),
+`REVOKED` (final → 401 `connect_revoked`). Statuses newer than your SDK map to `UNKNOWN`.
+
+**Partner webhook envelope** = the regular envelope + `connection`
+(`event.connection()` → `id`, `externalId`, `accountId`, `projectId`, `status`). It is `null`
+on regular (non-partner) webhooks. Event constants: `Webhooks.EVENT_CONNECT_COMPLETED`,
+`EVENT_CONNECT_SUSPENDED`, `EVENT_CONNECT_RESUMED`, `EVENT_CONNECT_REVOKED`
+(all in `Webhooks.CONNECT_EVENT_TYPES`).
+
+### Connected apps (customer side)
+
+A bZapper account can see and disconnect the partner apps using its WhatsApp:
+
+```java
+List<PartnerConnection> apps = client.listConnectedApps();  // GET /me/connections (partnerName, partnerLogoUrl)
+client.revokeConnectedApp(apps.get(0).id());                // DELETE /me/connections/{id} (admin) — partner key stops at once
+```
+
 ## Error handling
 
 Non-2xx responses throw `BzapperException`. The error body is
@@ -305,6 +479,10 @@ try {
 
 `getStatusCode()` returns the HTTP status (or `0` for local transport/serialization errors,
 which carry codes like `network_error`).
+
+Keys issued through bZapper Connect add two codes (constants on `BzapperException`):
+`connect_suspended` (**402**, the customer's Pro is unpaid — temporary, keep the key) and
+`connect_revoked` (**401**, the connection ended — final).
 
 ## Example
 
