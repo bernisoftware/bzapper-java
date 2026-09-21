@@ -40,6 +40,8 @@ import java.util.Objects;
 public final class BzapperPartner {
 
     private final HttpTransport transport;
+    // Per-call options applied by withOptions(...); null = defaults.
+    private final RequestOptions defaults;
 
     /**
      * Creates a partner client pointing at the production API.
@@ -62,7 +64,27 @@ public final class BzapperPartner {
         this.transport = new HttpTransport(
                 Objects.requireNonNull(b.baseUrl, "baseUrl"),
                 Objects.requireNonNull(b.partnerSecret, "partnerSecret"),
-                b.locale, b.timeout, b.connectTimeout, b.httpClient);
+                b.locale, null, b.timeout, b.connectTimeout, b.httpClient, b.maxRetries);
+        this.defaults = null;
+    }
+
+    private BzapperPartner(HttpTransport transport, RequestOptions defaults) {
+        this.transport = transport;
+        this.defaults = defaults;
+    }
+
+    /**
+     * A view of this partner client that applies {@code options} (your own
+     * {@code Idempotency-Key}, a per-attempt timeout) to every call it makes. Create one
+     * per logical call when passing an idempotency key.
+     */
+    public BzapperPartner withOptions(RequestOptions options) {
+        return new BzapperPartner(transport, options);
+    }
+
+    /** Retry wait, replaceable in tests (the suite must not really sleep). */
+    void setSleeper(HttpTransport.Sleeper sleeper) {
+        transport.setSleeper(sleeper);
     }
 
     /** Builder pointing at the production API (recommended). */
@@ -83,6 +105,7 @@ public final class BzapperPartner {
         private Duration timeout;
         private Duration connectTimeout;
         private HttpClient httpClient;
+        private int maxRetries = HttpTransport.DEFAULT_MAX_RETRIES;
 
         private Builder(String baseUrl, String partnerSecret) {
             this.baseUrl = baseUrl;
@@ -113,6 +136,18 @@ public final class BzapperPartner {
             return this;
         }
 
+        /**
+         * Retries on network error/timeout, 429, 502, 503 and 504 (beyond the first
+         * attempt). Default 2; {@code 0} disables.
+         */
+        public Builder maxRetries(int maxRetries) {
+            if (maxRetries < 0) {
+                throw new IllegalArgumentException("maxRetries must be >= 0");
+            }
+            this.maxRetries = maxRetries;
+            return this;
+        }
+
         public BzapperPartner build() {
             return new BzapperPartner(this);
         }
@@ -124,7 +159,7 @@ public final class BzapperPartner {
 
     /** {@code GET /partner/me} — who this partner secret belongs to. */
     public Partner me() {
-        return transport.request("GET", "/partner/me", null, Partner.class);
+        return call("GET", "/partner/me", null, Partner.class);
     }
 
     // ------------------------------------------------------------------
@@ -145,7 +180,7 @@ public final class BzapperPartner {
         payload.put("external_id", externalId);
         payload.put("customer", customer);
         if (locale != null) payload.put("locale", locale);
-        return transport.request("POST", "/partner/connect-sessions", payload, ConnectSession.class);
+        return call("POST", "/partner/connect-sessions", payload, ConnectSession.class);
     }
 
     /** {@code POST /partner/connect-sessions} — same as above without a locale. */
@@ -164,7 +199,7 @@ public final class BzapperPartner {
     public PartnerConnection exchangeCode(String code) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("code", code);
-        return transport.request("POST", "/partner/connect/exchange", payload, PartnerConnection.class);
+        return call("POST", "/partner/connect/exchange", payload, PartnerConnection.class);
     }
 
     // ------------------------------------------------------------------
@@ -184,7 +219,7 @@ public final class BzapperPartner {
         if (externalId != null) q.add("external_id=" + HttpTransport.enc(externalId));
         if (status != null) q.add("status=" + HttpTransport.enc(status));
         if (!q.isEmpty()) path.append('?').append(String.join("&", q));
-        return transport.request("GET", path.toString(), null, ConnectionList.class).data();
+        return call("GET", path.toString(), null, ConnectionList.class).data();
     }
 
     /** {@code GET /partner/connections} — every connection (no filters). */
@@ -194,7 +229,7 @@ public final class BzapperPartner {
 
     /** {@code GET /partner/connections/{id}} — one connection (status, account, numbers). */
     public PartnerConnection getConnection(String id) {
-        return transport.request("GET", "/partner/connections/" + HttpTransport.enc(id), null,
+        return call("GET", "/partner/connections/" + Paths.seg(id, "id"), null,
                 PartnerConnection.class);
     }
 
@@ -205,8 +240,8 @@ public final class BzapperPartner {
      * when the connection is not completed yet or was revoked.
      */
     public PartnerConnection rotateConnectionKey(String id) {
-        return transport.request("POST", "/partner/connections/" + HttpTransport.enc(id) + "/rotate-key",
-                Map.of(), PartnerConnection.class);
+        return call("POST", "/partner/connections/" + Paths.seg(id, "id") + "/rotate-key",
+                null, PartnerConnection.class);
     }
 
     /**
@@ -215,6 +250,10 @@ public final class BzapperPartner {
      * customer's plan. A {@code connect.revoked} webhook is sent.
      */
     public void revokeConnection(String id) {
-        transport.request("DELETE", "/partner/connections/" + HttpTransport.enc(id), null, Void.class);
+        call("DELETE", "/partner/connections/" + Paths.seg(id, "id"), null, Void.class);
+    }
+
+    private <T> T call(String method, String path, Object body, Class<T> type) {
+        return transport.request(method, path, body, type, defaults);
     }
 }

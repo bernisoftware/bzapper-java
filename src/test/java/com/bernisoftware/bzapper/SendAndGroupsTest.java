@@ -24,7 +24,10 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Idempotency-Key nos envios, quoted_participant no corpo, prévia de convite de
@@ -90,9 +93,15 @@ class SendAndGroupsTest {
     }
 
     @Test
-    void noIdempotencyHeaderByDefault() {
+    void generatedIdempotencyHeaderByDefault() {
+        // Padrão Berni r2 (BRIEF §3): every write carries an Idempotency-Key, generated per
+        // logical call when the caller doesn't pass one — it is what makes retries safe.
         client().sendText(SendOptions.to("x"), "hi");
-        assertNull(idempotencyKey);
+        assertNotNull(idempotencyKey);
+        assertTrue(idempotencyKey.matches("[0-9a-f-]{36}"), idempotencyKey);
+        String first = idempotencyKey;
+        client().sendText(SendOptions.to("x"), "hi");
+        assertNotEquals(first, idempotencyKey, "a new logical call gets a new key");
     }
 
     @Test

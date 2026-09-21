@@ -1,16 +1,61 @@
-# Publica com.bernisoftware:bzapper no Maven Central (Sonatype Central Portal) ao
+# Publica br.com.bernisoftware:bzapper no Maven Central (Sonatype Central Portal) ao
 # dar push de uma tag vX.Y.Z no repo bernisoftware/bzapper-java.
 # É o ecossistema que exige MAIS setup (ver clients/PUBLISHING.md):
-#   - conta no Central Portal (central.sonatype.com) + namespace com.bernisoftware verificado
+#   - conta no Central Portal (central.sonatype.com) + namespace br.com.bernisoftware verificado
 #   - chave GPG (assinatura obrigatória)
 #   - o pom.xml precisa do central-publishing-maven-plugin no profile `release`
 # Secrets: MAVEN_CENTRAL_USERNAME, MAVEN_CENTRAL_PASSWORD, MAVEN_GPG_PRIVATE_KEY, MAVEN_GPG_PASSPHRASE
+#
+# PUBLICAR EXIGE SUÍTE VERDE (padrão Berni r2): conformidade (cases.json da cópia local) +
+# unitários + versão, no piso (Java 17) e no teto (Java 21), contra a árvore E contra o jar que
+# vai subir. Versões já foram ao registro com envios quebrados porque o workflow ia direto do
+# build para o upload.
 name: publish
 on:
   push:
     tags: ['v*']
+
+permissions:
+  contents: read
+
 jobs:
+  test:
+    name: test (Java ${{ matrix.java }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        java: ['17', '21']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+          cache: maven
+      - run: mvn -B --no-transfer-progress test
+
+  # A MESMA suíte roda de novo contra o JAR empacotado (perfil `artifact`: failsafe põe o jar no
+  # classpath e o VersionTest confere que a SDK veio mesmo do .jar) — pega erro de empacotamento.
+  verify-jar:
+    name: verify-jar (Java ${{ matrix.java }})
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        java: ['17', '21']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+          cache: maven
+      - run: mvn -B --no-transfer-progress -P artifact verify
+
   maven:
+    needs: verify-jar # sem suíte verde (árvore + jar) não sobe nada
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,7 +68,21 @@ jobs:
           server-password: MAVEN_PASSWORD
           gpg-private-key: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
           gpg-passphrase: MAVEN_GPG_PASSPHRASE
-      - run: mvn --batch-mode --no-transfer-progress clean deploy -P release
+
+      # A tag é a versão publicada: se divergir do pom.xml/Version.java, o Central receberia um
+      # número diferente do que a tag promete (e o X-Bzapper-Client mentiria).
+      - name: A tag bate com o pom.xml e com Version.java
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pom="$(mvn -B -q help:evaluate -Dexpression=project.version -DforceStdout)"
+          code="$(sed -n 's/.*public static final String VERSION = "\([^"]*\)".*/\1/p' src/main/java/com/bernisoftware/bzapper/Version.java)"
+          [ "$tag" = "$pom" ] || { echo "::error::tag $GITHUB_REF_NAME != pom.xml $pom"; exit 1; }
+          [ "$pom" = "$code" ] || { echo "::error::pom.xml $pom != Version.java $code"; exit 1; }
+          echo "versão $pom confirmada"
+
+      # release = assinatura GPG + upload; artifact = a suíte roda contra o jar que está subindo
+      # (integration-test/verify vêm antes de deploy).
+      - run: mvn --batch-mode --no-transfer-progress clean deploy -P release,artifact
         env:
           MAVEN_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}

@@ -27,7 +27,21 @@ public record SendOptions(
         @JsonProperty("sticky") Boolean sticky,
         @JsonProperty("scheduled_at") String scheduledAt,
         @JsonProperty("quoted_participant") String quotedParticipant,
-        @JsonIgnore String idempotencyKey) {
+        @JsonIgnore String idempotencyKey,
+        @JsonProperty("force") Boolean force,
+        @JsonProperty("groups") List<String> groups,
+        @JsonProperty("tags") List<String> tags) {
+
+    /**
+     * Constructor of 0.6.x (without {@code force}/{@code groups}/{@code tags}), kept so
+     * existing code keeps compiling.
+     */
+    public SendOptions(String to, String instanceId, String poolId, String quotedMessageId,
+                       String clientReference, List<String> mentions, Boolean sticky, String scheduledAt,
+                       String quotedParticipant, String idempotencyKey) {
+        this(to, instanceId, poolId, quotedMessageId, clientReference, mentions, sticky, scheduledAt,
+                quotedParticipant, idempotencyKey, null, null, null);
+    }
 
     /**
      * Original constructor (without {@code quotedParticipant}/{@code idempotencyKey}),
@@ -35,24 +49,24 @@ public record SendOptions(
      */
     public SendOptions(String to, String instanceId, String poolId, String quotedMessageId,
                        String clientReference, List<String> mentions, Boolean sticky, String scheduledAt) {
-        this(to, instanceId, poolId, quotedMessageId, clientReference, mentions, sticky, scheduledAt, null, null);
+        this(to, instanceId, poolId, quotedMessageId, clientReference, mentions, sticky, scheduledAt, null, null, null, null, null);
     }
 
     /** Start from a destination (E.164 phone or JID). */
     public static SendOptions to(String to) {
-        return new SendOptions(to, null, null, null, null, null, null, null, null, null);
+        return new SendOptions(to, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     public SendOptions withInstanceId(String instanceId) {
-        return new SendOptions(to, instanceId, poolId, quotedMessageId, clientReference, mentions, sticky, scheduledAt, quotedParticipant, idempotencyKey);
+        return new SendOptions(to, instanceId, poolId, quotedMessageId, clientReference, mentions, sticky, scheduledAt, quotedParticipant, idempotencyKey, force, groups, tags);
     }
 
     public SendOptions withPoolId(String poolId) {
-        return new SendOptions(to, instanceId, poolId, quotedMessageId, clientReference, mentions, sticky, scheduledAt, quotedParticipant, idempotencyKey);
+        return new SendOptions(to, instanceId, poolId, quotedMessageId, clientReference, mentions, sticky, scheduledAt, quotedParticipant, idempotencyKey, force, groups, tags);
     }
 
     public SendOptions withQuotedMessageId(String quotedMessageId) {
-        return new SendOptions(to, instanceId, poolId, quotedMessageId, clientReference, mentions, sticky, scheduledAt, quotedParticipant, idempotencyKey);
+        return new SendOptions(to, instanceId, poolId, quotedMessageId, clientReference, mentions, sticky, scheduledAt, quotedParticipant, idempotencyKey, force, groups, tags);
     }
 
     /**
@@ -61,16 +75,16 @@ public record SendOptions(
      * from history).
      */
     public SendOptions withQuotedParticipant(String quotedParticipant) {
-        return new SendOptions(to, instanceId, poolId, quotedMessageId, clientReference, mentions, sticky, scheduledAt, quotedParticipant, idempotencyKey);
+        return new SendOptions(to, instanceId, poolId, quotedMessageId, clientReference, mentions, sticky, scheduledAt, quotedParticipant, idempotencyKey, force, groups, tags);
     }
 
     public SendOptions withClientReference(String clientReference) {
-        return new SendOptions(to, instanceId, poolId, quotedMessageId, clientReference, mentions, sticky, scheduledAt, quotedParticipant, idempotencyKey);
+        return new SendOptions(to, instanceId, poolId, quotedMessageId, clientReference, mentions, sticky, scheduledAt, quotedParticipant, idempotencyKey, force, groups, tags);
     }
 
     /** People mentioned (groups): JIDs or plain phones. */
     public SendOptions withMentions(List<String> mentions) {
-        return new SendOptions(to, instanceId, poolId, quotedMessageId, clientReference, mentions, sticky, scheduledAt, quotedParticipant, idempotencyKey);
+        return new SendOptions(to, instanceId, poolId, quotedMessageId, clientReference, mentions, sticky, scheduledAt, quotedParticipant, idempotencyKey, force, groups, tags);
     }
 
     /**
@@ -78,7 +92,7 @@ public record SendOptions(
      * talking to {@code to}. Defaults to true server-side; set false to force rotation.
      */
     public SendOptions withSticky(Boolean sticky) {
-        return new SendOptions(to, instanceId, poolId, quotedMessageId, clientReference, mentions, sticky, scheduledAt, quotedParticipant, idempotencyKey);
+        return new SendOptions(to, instanceId, poolId, quotedMessageId, clientReference, mentions, sticky, scheduledAt, quotedParticipant, idempotencyKey, force, groups, tags);
     }
 
     /**
@@ -87,7 +101,7 @@ public record SendOptions(
      * add-on. Returns status {@code scheduled}. OTP cannot be scheduled.
      */
     public SendOptions withScheduledAt(String scheduledAt) {
-        return new SendOptions(to, instanceId, poolId, quotedMessageId, clientReference, mentions, sticky, scheduledAt, quotedParticipant, idempotencyKey);
+        return new SendOptions(to, instanceId, poolId, quotedMessageId, clientReference, mentions, sticky, scheduledAt, quotedParticipant, idempotencyKey, force, groups, tags);
     }
 
     /**
@@ -98,6 +112,28 @@ public record SendOptions(
      * call still running → 409 {@code idempotency_in_progress}.
      */
     public SendOptions withIdempotencyKey(String idempotencyKey) {
-        return new SendOptions(to, instanceId, poolId, quotedMessageId, clientReference, mentions, sticky, scheduledAt, quotedParticipant, idempotencyKey);
+        return new SendOptions(to, instanceId, poolId, quotedMessageId, clientReference, mentions, sticky, scheduledAt, quotedParticipant, idempotencyKey, force, groups, tags);
+    }
+
+    /**
+     * When true, bypasses an INFERRED suppression (e.g. opt-out inferred from behaviour)
+     * for this send. Does NOT override an explicit suppression entry — use with care and
+     * only with a lawful basis.
+     */
+    public SendOptions withForce(Boolean force) {
+        return new SendOptions(to, instanceId, poolId, quotedMessageId, clientReference, mentions, sticky, scheduledAt, quotedParticipant, idempotencyKey, force, groups, tags);
+    }
+
+    /**
+     * Contact-group keys stamped onto the recipient contact when this send resolves
+     * (see {@code listContactGroups}). Does NOT send to a WhatsApp group.
+     */
+    public SendOptions withGroups(List<String> groups) {
+        return new SendOptions(to, instanceId, poolId, quotedMessageId, clientReference, mentions, sticky, scheduledAt, quotedParticipant, idempotencyKey, force, groups, tags);
+    }
+
+    /** Tag keys stamped onto the recipient contact when this send resolves (see {@code listTags}). */
+    public SendOptions withTags(List<String> tags) {
+        return new SendOptions(to, instanceId, poolId, quotedMessageId, clientReference, mentions, sticky, scheduledAt, quotedParticipant, idempotencyKey, force, groups, tags);
     }
 }

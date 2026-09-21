@@ -6,7 +6,7 @@
 
   <groupId>br.com.bernisoftware</groupId>
   <artifactId>bzapper</artifactId>
-  <version>0.6.2</version>
+  <version>0.7.0</version>
   <packaging>jar</packaging>
 
   <name>bZapper Java SDK</name>
@@ -73,6 +73,29 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
         <version>3.2.5</version>
+        <configuration>
+          <trimStackTrace>false</trimStackTrace>
+          <systemPropertyVariables>
+            <!-- VersionTest/ConformanceTest leem o pom.xml, o Version.java e a fonte dos casos daqui. -->
+            <bzapper.projectDir>${project.basedir}</bzapper.projectDir>
+          </systemPropertyVariables>
+        </configuration>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.4.1</version>
+        <configuration>
+          <archive>
+            <manifestEntries>
+              <Automatic-Module-Name>com.bernisoftware.bzapper</Automatic-Module-Name>
+              <Implementation-Title>${project.name}</Implementation-Title>
+              <Implementation-Version>${project.version}</Implementation-Version>
+              <Implementation-Vendor>Berni Software</Implementation-Vendor>
+            </manifestEntries>
+          </archive>
+        </configuration>
       </plugin>
 
       <plugin>
@@ -109,6 +132,48 @@
        Requer: namespace com.bernisoftware verificado no Central Portal, chave GPG,
        e credenciais. Ver clients/PUBLISHING.md (seção Java). O CI usa `mvn deploy -P release`. -->
   <profiles>
+    <!-- Roda a MESMA suíte (conformidade + unitários) contra o jar empacotado, não contra
+         target/classes: o failsafe põe o artefato no classpath (e o VersionTest confere que a
+         SDK veio do .jar). O surefire fica desligado aqui. Uso: mvn -P artifact verify -->
+    <profile>
+      <id>artifact</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <version>3.2.5</version>
+            <configuration>
+              <skip>true</skip>
+            </configuration>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-failsafe-plugin</artifactId>
+            <version>3.2.5</version>
+            <configuration>
+              <trimStackTrace>false</trimStackTrace>
+              <includes>
+                <include>**/*Test.java</include>
+              </includes>
+              <systemPropertyVariables>
+                <bzapper.artifactTest>true</bzapper.artifactTest>
+                <bzapper.projectDir>${project.basedir}</bzapper.projectDir>
+              </systemPropertyVariables>
+            </configuration>
+            <executions>
+              <execution>
+                <goals>
+                  <goal>integration-test</goal>
+                  <goal>verify</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
     <profile>
       <id>release</id>
       <build>

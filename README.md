@@ -5,7 +5,13 @@ multi-tenant WhatsApp gateway with a REST HTTP API.
 
 - Java 17+
 - Built on the JDK `java.net.http.HttpClient` — the only runtime dependency is Jackson for JSON.
-- Typed error model: every non-2xx response throws a `BzapperException` carrying a **stable code**.
+- One method per API operation (messages, numbers, groups, chats, contacts/CRM, campaigns,
+  pools, webhooks, advisories, usage, billing, projects/users/keys, brand, official rail and
+  bZapper Connect).
+- Typed error model: every non-2xx response throws a `BzapperException` (or a typed subclass)
+  carrying a **stable code** and the **request id**.
+- Safe automatic retries (network errors, 429, 502/503/504) with the same `X-Request-Id` and
+  `Idempotency-Key` on every attempt.
 
 ## Install
 
@@ -15,15 +21,18 @@ Maven (`br.com.bernisoftware:bzapper`):
 <dependency>
   <groupId>br.com.bernisoftware</groupId>
   <artifactId>bzapper</artifactId>
-  <version>0.5.0</version>
+  <version>0.6.2</version>
 </dependency>
 ```
 
 Gradle:
 
 ```kotlin
-implementation("br.com.bernisoftware:bzapper:0.5.0")
+implementation("br.com.bernisoftware:bzapper:0.6.2")
 ```
+
+> **Pin the exact version** (`0.6.2`, not a range). Every release note states whether it
+> changes the public surface (a breaking signature change) or is purely additive.
 
 The SDK's **only** runtime dependency is **Jackson**, pulled in **transitively** — you
 add nothing else (no Gson, no OkHttp, no manual dependencies). Requires **Java 17+**.
@@ -52,19 +61,30 @@ Use the constructor for the defaults, or the builder for `locale` and `timeout`:
 import java.time.Duration;
 
 BzapperClient client = BzapperClient.builder("bz_live_...")
-        .locale("pt-BR")                  // sent as Accept-Language
-        .timeout(Duration.ofSeconds(30))  // per-request timeout
+        .locale("pt-BR")                  // sent as Accept-Language (translated error messages)
+        .timeout(Duration.ofSeconds(30))  // per-attempt timeout (default 30 s)
+        .maxRetries(2)                    // retries beyond the first attempt (default 2; 0 disables)
+        .projectId("project-uuid")        // optional: sent as X-Project-Id
         .build();
 ```
 
 The 1-arg `builder(apiKey)` defaults the base URL to production. For dev/self-host,
 use the 2-arg `builder(baseUrl, apiKey)` (e.g. `builder("http://localhost:8080", "bz_live_...")`).
 
+Where to get the key: in the bZapper panel, **API keys** (or `createKey` below). A key belongs
+to a project (numbers, inbox, keys and stats are isolated per project); `projectId(...)` only
+matters for account-wide keys.
+
 Every request sends:
 
 - `Authorization: Bearer <apiKey>`
+- `Accept: application/json`
 - `Content-Type: application/json` (on requests with a body)
-- `Accept-Language: <locale>` (only when a locale is set)
+- `X-Bzapper-Client` and `User-Agent`: `bzapper-java/<version>` — how the API knows which
+  accounts run a version affected by a fix (the "update your integration" advisories)
+- `X-Request-Id`: generated per logical call, repeated on retries
+- `Idempotency-Key` on POST/PUT/PATCH/DELETE: generated per logical call (or yours), repeated on retries
+- `Accept-Language: <locale>` / `X-Project-Id: <projectId>` (only when set)
 
 ## `SendOptions` (common send fields)
 
@@ -79,6 +99,9 @@ SendOptions opts = SendOptions.to("+5511999999999")
         .withQuotedParticipant("+5511777777777") // quoted author — groups only, when not in bZapper history
         .withClientReference("order-42")    // echoed back on status events
         .withMentions(java.util.List.of("5511888888888@s.whatsapp.net", "+55 11 97777-7777")) // JIDs or phones
+        .withGroups(java.util.List.of("customers"))  // stamp contact groups on the recipient contact
+        .withTags(java.util.List.of("vip"))          // stamp tags on the recipient contact
+        .withForce(true)                    // bypass an INFERRED suppression (never an explicit one)
         .withIdempotencyKey("order-42-confirmation"); // Idempotency-Key header: safe retries
 ```
 
@@ -142,6 +165,22 @@ client.sendList(to, "Our menu", "Tap to choose", "Open menu",
 
 Every `send*` call returns a `SentMessage` (`messageId`, `status`, `clientReference`).
 
+```java
+// OTP: the code goes on its own copyable bubble (1 logical send); body/expiry optional
+client.sendOTP(to, "482913", null, 10);
+
+// Scheduling: any send with withScheduledAt(...) returns status "scheduled"
+client.sendText(to.withScheduledAt("2026-12-24T12:00:00Z"), "Merry Christmas!");
+client.listScheduled(50);                        // GET /messages/scheduled?limit=
+client.cancelScheduled("scheduled-uuid");        // DELETE /messages/scheduled/{id}
+
+// Edit / revoke / forward / mark read
+client.editMessage("wa-message-id", "Fixed text");
+client.revokeMessage("wa-message-id", true);     // for everyone
+client.forwardMessage(inst, "+5511888888888", "5511999999999@s.whatsapp.net", "wa-message-id");
+client.markRead("wa-message-id", inst, "5511999999999@s.whatsapp.net", null, null);
+```
+
 ## Instances
 
 ```java
@@ -156,6 +195,24 @@ ConnectResult qr = client.connectInstance(created.id(), "qr");    // -> qr.qrCod
 ConnectResult code = client.connectInstance(created.id(), "code");// -> code.pairCode()
 
 client.disconnectInstance(created.id());                          // POST /instances/{id}/disconnect
+client.logoutInstance(created.id());                              // unpair the device
+client.clearInstanceSession(created.id());                        // wipe the device credential (clean re-pair)
+client.setInstanceProxy(created.id(), "http://user:pass@proxy:8080");
+client.setInboundFilters(created.id(), Map.of("ignore_groups", true, "ignore_status", true));
+client.setPrivacy(created.id(), "last", "contacts");
+client.archiveInstance(created.id());                             // archived numbers: listInstances(null, true)
+client.unarchiveInstance(created.id());
+client.deleteInstance(created.id());
+
+// Official rail (WhatsApp Cloud API) — project created with api_mode OFFICIAL
+client.createProject("Store (official)", "OFFICIAL");
+Map<String, Object> official = client.getOfficialAccount();       // GET /official/account
+client.disconnectOfficialAccount();
+
+// Number pools (rotation)
+Map<String, Object> pool = client.createPool("Sales", "round_robin", false);
+client.addPoolNumber((String) pool.get("id"), created.id());
+client.listPools();
 ```
 
 ## Groups, presence and conversations
@@ -199,7 +256,19 @@ client.updateGroupParticipants(g.jid(), inst, ParticipantAction.ADD,
         List.of("5511777777777@s.whatsapp.net"));                             // add|remove|promote|demote
 GroupInvite invite = client.groupInvite(g.jid(), inst);                       // GET /groups/{jid}/invite
 System.out.println(invite.url());
+client.groupInviteLink(g.jid(), inst, true);                                  // reset=true: revoke + new link
+client.updateGroup(g.jid(), inst, "Project X (2026)", "Topic", true, null);    // name/topic/announce/locked
+client.listJoinRequests(g.jid(), inst);
+client.updateJoinRequests(g.jid(), inst, List.of("5511666666666@s.whatsapp.net"), true); // approve
 client.leaveGroup(g.jid(), inst);                                             // POST /groups/{jid}/leave
+
+// --- Chats: mute, labels; blocking; calls --------------------------------
+client.muteChat("5511999999999@s.whatsapp.net", inst, true);
+Map<String, Object> label = client.createLabel(inst, "Hot lead", null);
+client.applyChatLabel("5511999999999@s.whatsapp.net", inst, (String) label.get("id"), true);
+client.blockContact("5511999999999@s.whatsapp.net", inst);
+client.getBlocklist(inst);
+client.rejectCall(inst, "call-id", "5511999999999@s.whatsapp.net");
 
 // --- Contacts -----------------------------------------------------------
 Map<String, Object> check = client.contactsCheck(inst,
@@ -210,6 +279,61 @@ Instance updated = client.setProfile(inst, ProfileUpdate.empty()             // 
         .withDisplayName("Support")
         .withStatusMessage("We reply fast")
         .withPicture("iVBORw0KGgo..."));  // base64 image
+```
+
+## Contacts (CRM base)
+
+The contact base is captured automatically from conversations and shared across the account;
+the contact↔project/number link is maintained by the API.
+
+```java
+Map<String, Object> page = client.listContacts(Map.of(
+        "search", "ana", "tags", List.of("vip"), "has_email", true, "limit", 50)); // lists go as CSV
+Map<String, Object> ana = client.createContact(Map.of("phone", "+5511999998888", "name", "Ana"));
+String contactId = (String) ana.get("id");
+client.updateContact(contactId, Map.of("email", "ana@example.com")); // a key mapped to null clears it
+client.mutateContactTags(contactId, List.of("vip"), null);
+client.mutateContactGroups(contactId, List.of("customers"), null);
+client.addContactNote(contactId, "Called about the order");
+client.getContactHistory(contactId, 50);         // timeline (messages + events)
+client.optOutContact(contactId);                 // or optInContact / suppressContact
+client.createTag("vip", "VIP", "#22c55e");       // listTags / deleteTag
+client.createContactGroup("customers", "Customers", null); // listContactGroups / deleteContactGroup
+client.createSuppression("+5511977776666", "asked to stop"); // listSuppressions / deleteSuppression
+```
+
+## Campaigns (Pro + campaigns add-on)
+
+```java
+Map<String, Object> camp = client.createCampaign(Map.of(
+        "name", "Black Friday",
+        "pacing_profile", "conservative",
+        "variations", List.of(Map.of("body", "Hi {name}! {Deal|Offer} of the day"))));
+String campaignId = (String) camp.get("id");
+client.addCampaignRecipients(campaignId, Map.of("contact_filter", Map.of("tags", List.of("vip"))));
+client.estimateCampaign(1000, "normal", null);   // live estimate
+client.getCampaignEligibility(null);             // numbers allowed to dispatch
+client.dryRunCampaign(campaignId);               // simulate
+client.startCampaign(campaignId);                // pause/resume/cancel too
+client.listCampaignRecipients(campaignId, 100);
+client.uploadCampaignMedia(java.nio.file.Path.of("banner.png")); // multipart → {url}
+```
+
+## Projects, users, brand and billing
+
+```java
+client.listProjects();
+client.updateProject("project-uuid", "Store", null, "#0ea5e9");
+client.getProjectBrand("project-uuid");
+client.uploadProjectLogo("project-uuid", java.nio.file.Path.of("logo.png"));
+client.uploadBrandLogo(bytes, "logo.png", "image/png");
+client.inviteUser("ana@example.com", "Ana", "agent");
+client.getMe();
+client.getMyEntitlements();                     // plan + add-ons
+client.changeAddon("number", 1);                // cart: +1 number
+client.checkoutAddonCart(true);                 // one invoice for the cart
+client.listMyInvoices();
+client.getPricing();
 ```
 
 ## API keys (self-serve)
@@ -255,6 +379,7 @@ client.updateWebhook(id, null, null, null, null, false);        // pause (active
 client.updateWebhook(id, null, "regenerate", null, null, null); // rotate the secret
 client.testWebhook(id, "message.received");                     // POST /webhooks/{id}/test
 client.webhookDeliveries(id, 20);                               // GET /webhooks/{id}/deliveries
+client.triggerWebhookEvent("message.received");                 // fire a sample event
 client.deleteWebhook(id);                                       // DELETE /webhooks/{id}
 ```
 
@@ -288,7 +413,10 @@ try {
 
 Need verification without dispatch? Use `hooks.verify(rawBody, signature)` (boolean)
 or `hooks.constructEvent(rawBody, signature)` (verifies + parses to a `WebhookEvent`,
-throwing `WebhookSignatureException` on a bad signature).
+throwing `WebhookSignatureException` on a bad signature). Stateless forms, same as every
+Berni SDK: `Webhooks.verify(secret, rawBody, signatureHeader)` and
+`Webhooks.constructEvent(secret, rawBody, signatureHeader)`. The header is
+`X-Bzapper-Signature: sha256=<hex>` = HMAC-SHA256 of the raw body, compared in constant time.
 
 ## bZapper Connect (partners)
 
@@ -456,33 +584,68 @@ List<PartnerConnection> apps = client.listConnectedApps();  // GET /me/connectio
 client.revokeConnectedApp(apps.get(0).id());                // DELETE /me/connections/{id} (admin) — partner key stops at once
 ```
 
-## Error handling
+## Errors, retries and idempotency
 
-Non-2xx responses throw `BzapperException`. The error body is
+Every failure throws `BzapperException` (unchecked). The error body is
 `{ "code", "message", "locale" }` — **always branch on `code`** (stable, neutral), never on
-the localized `message`.
+the localized `message`. Send `getRequestId()` to support.
+
+| Field | Meaning |
+|---|---|
+| `getCode()` | `body.code`, else `body.error`, else `HTTP_<status>`; `NETWORK_ERROR`; `INVALID_RESPONSE` |
+| `getMessage()` | human-readable (translated via `locale`) |
+| `getStatusCode()` / `getStatus()` | HTTP status (`0` on a network error) |
+| `getRequestId()` | response `X-Request-Id`, else the one the SDK sent |
+| `getRetryAfter()` | `Retry-After` as a `Duration` (429 only) |
+| `getRequiredScope()` | `X-Required-Scope` (403 of scope only) |
+| `getBody()` | the decoded error body (structured detail of some errors) |
+
+Typed subclasses — all extend `BzapperException`, so `catch (BzapperException e)` still
+catches everything: `AuthenticationException` (401), `PermissionDeniedException` (403),
+`NotFoundException` (404), `ConflictException` (409), `ValidationException` (400/422),
+`RateLimitException` (429), `ServerException` (5xx), `NetworkException` (connection/timeout,
+status 0, code `NETWORK_ERROR`). Any other status comes as the base class. A 2xx whose body
+is not JSON throws the base class with code `INVALID_RESPONSE`. An empty, `"."` or `".."`
+path parameter (or an empty API key) throws `IllegalArgumentException` before any request.
 
 ```java
-import com.bernisoftware.bzapper.BzapperException;
+import com.bernisoftware.bzapper.*;
 
 try {
     client.sendText(SendOptions.to("+5511999999999"), "Hi");
+} catch (RateLimitException e) {
+    retryLater(e.getRetryAfter());                // the SDK already retried maxRetries times
 } catch (BzapperException e) {
     switch (e.getCode()) {
         case "not_connected" -> reconnect();
-        case "rate_limited"  -> backoff();        // HTTP 429
         case "unauthorized"  -> refreshApiKey();
-        default -> log.error("bZapper {} ({}): {}", e.getCode(), e.getStatusCode(), e.getMessage());
+        default -> log.error("bZapper {} ({}) request_id={}: {}",
+                e.getCode(), e.getStatusCode(), e.getRequestId(), e.getMessage());
     }
 }
 ```
 
-`getStatusCode()` returns the HTTP status (or `0` for local transport/serialization errors,
-which carry codes like `network_error`).
+**Retries.** Network errors/timeouts, 429, 502, 503 and 504 are retried up to `maxRetries`
+(default 2): waiting `Retry-After` when present (capped at 60 s), else
+`min(8, 0.5 × 2^attempt)` s + up to 25% jitter. A 500 or a 4xx is never retried.
+
+**Idempotency.** Every write carries an `Idempotency-Key` — generated per logical call and
+**the same on every retry**, so a retried send is never delivered twice (the API replays the
+original response with `Idempotent-Replayed: true` for 24 h). Pass your own to also
+deduplicate re-runs of YOUR code (e.g. a re-executed job):
+
+```java
+client.sendText(SendOptions.to("+5511999999999").withIdempotencyKey("order-42"), "Paid!");
+client.withOptions(RequestOptions.idempotencyKey("order-42-contact"))  // any other write
+      .createContact(Map.of("phone", "+5511999999999"));
+```
 
 Keys issued through bZapper Connect add two codes (constants on `BzapperException`):
 `connect_suspended` (**402**, the customer's Pro is unpaid — temporary, keep the key) and
 `connect_revoked` (**401**, the connection ended — final).
+
+> Since the r2 transport, local transport failures use code `NETWORK_ERROR` (was
+> `network_error`) and a non-JSON error body yields `HTTP_<status>` (was `http_error`).
 
 ## Example
 

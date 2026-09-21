@@ -21,7 +21,7 @@ import java.util.List;
  *
  * <pre>{@code
  * mvn -q -DskipTests package
- * CP="target/bzapper-0.1.0.jar:$(find ~/.m2 -name 'jackson-*-2.17.2.jar' | tr '\n' ':')"
+ * CP="target/bzapper-0.6.2.jar:$(find ~/.m2 -name 'jackson-*-2.17.2.jar' | tr '\n' ':')"
  * java -cp "$CP:examples" QuickStart
  * }</pre>
  *
@@ -117,10 +117,20 @@ public class QuickStart {
             // Profile
             client.setProfile(instanceId, ProfileUpdate.empty().withDisplayName("Support"));
 
+            // Contacts (CRM base) and tags
+            System.out.println("contacts -> " + client.listContacts(java.util.Map.of("search", "ana", "limit", 10)));
+            System.out.println("tags -> " + client.listTags());
+
+            // Campaigns and pools
+            System.out.println("campaigns -> " + client.listCampaigns(10));
+            System.out.println("pools -> " + client.listPools());
+
+
         } catch (BzapperException e) {
             // Always branch on the stable code, never on the message text.
             System.err.println("API error code=" + e.getCode()
                     + " status=" + e.getStatusCode()
+                    + " request_id=" + e.getRequestId()
                     + " message=" + e.getMessage());
         }
     }

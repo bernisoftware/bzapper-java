@@ -52,6 +52,8 @@ public final class BzapperClient {
     public static final String DEFAULT_BASE_URL = "https://api.bzapper.com.br";
 
     private final HttpTransport transport;
+    // Per-call options applied by withOptions(...); null = defaults.
+    private final RequestOptions defaults;
 
     /**
      * Creates a client pointing at the production API — pass just your API key.
@@ -79,7 +81,32 @@ public final class BzapperClient {
         this.transport = new HttpTransport(
                 Objects.requireNonNull(b.baseUrl, "baseUrl"),
                 Objects.requireNonNull(b.apiKey, "apiKey"),
-                b.locale, b.timeout, b.connectTimeout, b.httpClient);
+                b.locale, b.projectId, b.timeout, b.connectTimeout, b.httpClient, b.maxRetries);
+        this.defaults = null;
+    }
+
+    private BzapperClient(HttpTransport transport, RequestOptions defaults) {
+        this.transport = transport;
+        this.defaults = defaults;
+    }
+
+    /**
+     * A view of this client that applies {@code options} (your own {@code Idempotency-Key},
+     * a per-attempt timeout) to every call it makes. Cheap: shares the connection pool.
+     * Create one per logical call when passing an idempotency key:
+     *
+     * <pre>{@code
+     * client.withOptions(RequestOptions.idempotencyKey("order-1042"))
+     *       .createContact(Map.of("phone", "+5511999998888", "name", "Ana"));
+     * }</pre>
+     */
+    public BzapperClient withOptions(RequestOptions options) {
+        return new BzapperClient(transport, options);
+    }
+
+    /** Retry wait, replaceable in tests (the suite must not really sleep). */
+    void setSleeper(HttpTransport.Sleeper sleeper) {
+        transport.setSleeper(sleeper);
     }
 
     /** Builder pointing at the production API — pass just your API key (recommended). */
@@ -100,6 +127,8 @@ public final class BzapperClient {
         private Duration timeout;
         private Duration connectTimeout;
         private HttpClient httpClient;
+        private int maxRetries = HttpTransport.DEFAULT_MAX_RETRIES;
+        private String projectId;
 
         private Builder(String baseUrl, String apiKey) {
             this.baseUrl = baseUrl;
@@ -127,6 +156,25 @@ public final class BzapperClient {
         /** Supply a pre-configured {@link HttpClient} (proxies, executors, etc.). */
         public Builder httpClient(HttpClient httpClient) {
             this.httpClient = httpClient;
+            return this;
+        }
+
+        /**
+         * Retries on network error/timeout, 429, 502, 503 and 504 (beyond the first
+         * attempt). Default 2; {@code 0} disables. Retries reuse the same
+         * {@code X-Request-Id} and {@code Idempotency-Key}, so they are safe.
+         */
+        public Builder maxRetries(int maxRetries) {
+            if (maxRetries < 0) {
+                throw new IllegalArgumentException("maxRetries must be >= 0");
+            }
+            this.maxRetries = maxRetries;
+            return this;
+        }
+
+        /** Project scope sent as {@code X-Project-Id} (a key already carries its own project). */
+        public Builder projectId(String projectId) {
+            this.projectId = projectId;
             return this;
         }
 
@@ -274,7 +322,7 @@ public final class BzapperClient {
 
     /** {@code DELETE /messages/scheduled/{id}} — cancel a pending scheduled send. */
     public Map<String, Object> cancelScheduled(String scheduledId) {
-        return requestMap("DELETE", "/messages/scheduled/" + enc(scheduledId), null);
+        return requestMap("DELETE", "/messages/scheduled/" + seg(scheduledId, "scheduledId"), null);
     }
 
     // ------------------------------------------------------------------
@@ -299,7 +347,7 @@ public final class BzapperClient {
 
     /** {@code GET /campaigns/{id}} — campaign with stats. */
     public Map<String, Object> getCampaign(String id) {
-        return getMap("/campaigns/" + enc(id));
+        return getMap("/campaigns/" + seg(id, "id"));
     }
 
     /**
@@ -309,7 +357,7 @@ public final class BzapperClient {
      * and {@code variations} (when sent, it replaces the existing variations).
      */
     public Map<String, Object> updateCampaign(String id, Map<String, Object> body) {
-        return requestMap("PATCH", "/campaigns/" + enc(id), body);
+        return requestMap("PATCH", "/campaigns/" + seg(id, "id"), body);
     }
 
     /**
@@ -350,7 +398,7 @@ public final class BzapperClient {
      * restricted to active contacts, and re-checked against suppression.
      */
     public Map<String, Object> addCampaignRecipients(String id, Map<String, Object> body) {
-        return postMap("/campaigns/" + enc(id) + "/recipients", body);
+        return postMap("/campaigns/" + seg(id, "id") + "/recipients", body);
     }
 
     /**
@@ -362,32 +410,32 @@ public final class BzapperClient {
      * {@code message_id} and {@code last_error}.
      */
     public Map<String, Object> listCampaignRecipients(String id) {
-        return getMap("/campaigns/" + enc(id) + "/recipients");
+        return getMap("/campaigns/" + seg(id, "id") + "/recipients");
     }
 
     /** {@code POST /campaigns/{id}/start} — start (or schedule) the campaign. */
     public Map<String, Object> startCampaign(String id) {
-        return postMap("/campaigns/" + enc(id) + "/start", null);
+        return postMap("/campaigns/" + seg(id, "id") + "/start", null);
     }
 
     /** {@code POST /campaigns/{id}/pause} — pause the campaign. */
     public Map<String, Object> pauseCampaign(String id) {
-        return postMap("/campaigns/" + enc(id) + "/pause", null);
+        return postMap("/campaigns/" + seg(id, "id") + "/pause", null);
     }
 
     /** {@code POST /campaigns/{id}/resume} — resume the campaign. */
     public Map<String, Object> resumeCampaign(String id) {
-        return postMap("/campaigns/" + enc(id) + "/resume", null);
+        return postMap("/campaigns/" + seg(id, "id") + "/resume", null);
     }
 
     /** {@code POST /campaigns/{id}/cancel} — cancel the campaign. */
     public Map<String, Object> cancelCampaign(String id) {
-        return postMap("/campaigns/" + enc(id) + "/cancel", null);
+        return postMap("/campaigns/" + seg(id, "id") + "/cancel", null);
     }
 
     /** {@code POST /campaigns/{id}/dry-run} — simulate without sending. */
     public Map<String, Object> dryRunCampaign(String id) {
-        return postMap("/campaigns/" + enc(id) + "/dry-run", null);
+        return postMap("/campaigns/" + seg(id, "id") + "/dry-run", null);
     }
 
     // ------------------------------------------------------------------
@@ -422,7 +470,7 @@ public final class BzapperClient {
 
     /** {@code GET /instances/{id}} — fetch an instance. */
     public Instance getInstance(String id) {
-        return request("GET", "/instances/" + enc(id), null, Instance.class);
+        return request("GET", "/instances/" + seg(id, "id"), null, Instance.class);
     }
 
     /**
@@ -431,16 +479,16 @@ public final class BzapperClient {
      * @param method {@code "qr"} (default) or {@code "code"}; null uses the server default
      */
     public ConnectResult connectInstance(String id, String method) {
-        String path = "/instances/" + enc(id) + "/connect";
+        String path = "/instances/" + seg(id, "id") + "/connect";
         if (method != null && !method.isEmpty()) {
             path += "?method=" + enc(method);
         }
-        return request("POST", path, Map.of(), ConnectResult.class);
+        return request("POST", path, null, ConnectResult.class);
     }
 
     /** {@code POST /instances/{id}/disconnect} — disconnect (reconnectable). */
     public void disconnectInstance(String id) {
-        request("POST", "/instances/" + enc(id) + "/disconnect", Map.of(), Void.class);
+        request("POST", "/instances/" + seg(id, "id") + "/disconnect", null, Void.class);
     }
 
     /**
@@ -455,7 +503,7 @@ public final class BzapperClient {
      * again by scanning a QR code. Idempotent and safe to retry.
      */
     public void clearInstanceSession(String id) {
-        request("POST", "/instances/" + enc(id) + "/clear-session", Map.of(), Void.class);
+        request("POST", "/instances/" + seg(id, "id") + "/clear-session", null, Void.class);
     }
 
     // ------------------------------------------------------------------
@@ -477,7 +525,7 @@ public final class BzapperClient {
 
     /** {@code DELETE /keys/{id}} — revoke an API key. */
     public void revokeKey(String id) {
-        request("DELETE", "/keys/" + enc(id), null, Void.class);
+        request("DELETE", "/keys/" + seg(id, "id"), null, Void.class);
     }
 
     // ------------------------------------------------------------------
@@ -537,7 +585,7 @@ public final class BzapperClient {
      * @param limit      optional page size (server caps at 200); null for the default
      */
     public Map<String, Object> conversationHistory(String jid, String instanceId, String before, Integer limit) {
-        StringBuilder path = new StringBuilder("/conversations/").append(enc(jid)).append("/messages");
+        StringBuilder path = new StringBuilder("/conversations/").append(seg(jid, "jid")).append("/messages");
         List<String> q = new ArrayList<>();
         if (instanceId != null) q.add("instance_id=" + enc(instanceId));
         if (before != null) q.add("before=" + enc(before));
@@ -548,17 +596,17 @@ public final class BzapperClient {
 
     /** {@code POST /chats/{jid}/archive} — archive ({@code on=true}) or unarchive a chat. */
     public void archiveChat(String jid, String instanceId, boolean on) {
-        post("/chats/" + enc(jid) + "/archive", chatToggle(instanceId, on), Void.class);
+        post("/chats/" + seg(jid, "jid") + "/archive", chatToggle(instanceId, on), Void.class);
     }
 
     /** {@code POST /chats/{jid}/pin} — pin ({@code on=true}) or unpin a chat. */
     public void pinChat(String jid, String instanceId, boolean on) {
-        post("/chats/" + enc(jid) + "/pin", chatToggle(instanceId, on), Void.class);
+        post("/chats/" + seg(jid, "jid") + "/pin", chatToggle(instanceId, on), Void.class);
     }
 
     /** {@code POST /chats/{jid}/read} — mark a chat read ({@code on=true}) or unread. */
     public void markChat(String jid, String instanceId, boolean on) {
-        post("/chats/" + enc(jid) + "/read", chatToggle(instanceId, on), Void.class);
+        post("/chats/" + seg(jid, "jid") + "/read", chatToggle(instanceId, on), Void.class);
     }
 
     private Map<String, Object> chatToggle(String instanceId, boolean on) {
@@ -587,7 +635,7 @@ public final class BzapperClient {
 
     /** {@code GET /groups/{jid}?instance_id=} — fetch a single group. */
     public Group getGroup(String jid, String instanceId) {
-        return request("GET", "/groups/" + enc(jid) + query("instance_id", instanceId), null, Group.class);
+        return request("GET", "/groups/" + seg(jid, "jid") + query("instance_id", instanceId), null, Group.class);
     }
 
     /**
@@ -618,19 +666,19 @@ public final class BzapperClient {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("action", action != null ? action.value() : null);
         payload.put("participants", participants);
-        return post("/groups/" + enc(jid) + "/participants" + query("instance_id", instanceId),
+        return post("/groups/" + seg(jid, "jid") + "/participants" + query("instance_id", instanceId),
                 payload, Group.class);
     }
 
     /** {@code POST /groups/{jid}/leave?instance_id=} — leave a group. */
     public void leaveGroup(String jid, String instanceId) {
-        request("POST", "/groups/" + enc(jid) + "/leave" + query("instance_id", instanceId),
-                Map.of(), Void.class);
+        request("POST", "/groups/" + seg(jid, "jid") + "/leave" + query("instance_id", instanceId),
+                null, Void.class);
     }
 
     /** {@code GET /groups/{jid}/invite?instance_id=} — fetch the group's invite code/link. */
     public GroupInvite groupInvite(String jid, String instanceId) {
-        return request("GET", "/groups/" + enc(jid) + "/invite" + query("instance_id", instanceId),
+        return request("GET", "/groups/" + seg(jid, "jid") + "/invite" + query("instance_id", instanceId),
                 null, GroupInvite.class);
     }
 
@@ -657,7 +705,7 @@ public final class BzapperClient {
 
     /** {@code PATCH /instances/{id}/profile} — update display name, status and/or picture. */
     public Instance setProfile(String id, ProfileUpdate profile) {
-        return request("PATCH", "/instances/" + enc(id) + "/profile", profile, Instance.class);
+        return request("PATCH", "/instances/" + seg(id, "id") + "/profile", profile, Instance.class);
     }
 
     // ------------------------------------------------------------------
@@ -728,7 +776,7 @@ public final class BzapperClient {
 
     /** {@code POST /brand/apply} — apply the "About" to all connected numbers of the project. */
     public BrandApplyResult applyBrand() {
-        return request("POST", "/brand/apply", Map.of(), BrandApplyResult.class);
+        return request("POST", "/brand/apply", null, BrandApplyResult.class);
     }
 
     // ------------------------------------------------------------------
@@ -759,12 +807,12 @@ public final class BzapperClient {
     public void updateUserRole(String id, String role) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("role", role);
-        request("PATCH", "/users/" + enc(id), payload, Void.class);
+        request("PATCH", "/users/" + seg(id, "id"), payload, Void.class);
     }
 
     /** {@code DELETE /users/{id}} — remove a user from the account (admin). */
     public void removeUser(String id) {
-        request("DELETE", "/users/" + enc(id), null, Void.class);
+        request("DELETE", "/users/" + seg(id, "id"), null, Void.class);
     }
 
     /**
@@ -803,7 +851,7 @@ public final class BzapperClient {
 
     /** {@code POST /advisories/{id}/read} — dismiss an advisory once handled. */
     public Map<String, Object> markAdvisoryRead(String advisoryId) {
-        return postMap("/advisories/" + enc(advisoryId) + "/read", null);
+        return postMap("/advisories/" + seg(advisoryId, "advisoryId") + "/read", null);
     }
 
     public Map<String, Object> listWebhooks() {
@@ -853,12 +901,12 @@ public final class BzapperClient {
         if (eventTypes != null) payload.put("event_types", eventTypes);
         if (numberFilter != null) payload.put("number_filter", numberFilter);
         if (active != null) payload.put("active", active);
-        return requestMap("PATCH", "/webhooks/" + enc(id), payload);
+        return requestMap("PATCH", "/webhooks/" + seg(id, "id"), payload);
     }
 
     /** {@code DELETE /webhooks/{id}} — delete a webhook. */
     public void deleteWebhook(String id) {
-        request("DELETE", "/webhooks/" + enc(id), null, Void.class);
+        request("DELETE", "/webhooks/" + seg(id, "id"), null, Void.class);
     }
 
     /**
@@ -870,7 +918,7 @@ public final class BzapperClient {
     public Map<String, Object> testWebhook(String id, String eventType) {
         Map<String, Object> payload = new LinkedHashMap<>();
         if (eventType != null) payload.put("event_type", eventType);
-        return postMap("/webhooks/" + enc(id) + "/test", payload);
+        return postMap("/webhooks/" + seg(id, "id") + "/test", payload);
     }
 
     /**
@@ -879,7 +927,7 @@ public final class BzapperClient {
      * @param limit optional cap on results; null for the server default
      */
     public Map<String, Object> webhookDeliveries(String id, Integer limit) {
-        String path = "/webhooks/" + enc(id) + "/deliveries";
+        String path = "/webhooks/" + seg(id, "id") + "/deliveries";
         if (limit != null) path += "?limit=" + limit;
         return getMap(path);
     }
@@ -902,7 +950,585 @@ public final class BzapperClient {
      * {@code connect_revoked}); the account's plan is untouched.
      */
     public void revokeConnectedApp(String id) {
-        request("DELETE", "/me/connections/" + enc(id), null, Void.class);
+        request("DELETE", "/me/connections/" + seg(id, "id"), null, Void.class);
+    }
+
+    // ==================================================================
+    // Added in the "padrão Berni r2" upgrade: one method per API operation.
+    // ==================================================================
+
+    // ------------------------------------------------------------------
+    // Messages (extras)
+    // ------------------------------------------------------------------
+
+    /**
+     * {@code POST /messages/otp} — send a verification code with custom context text and
+     * the code's validity (shown to the recipient). {@code body}/{@code expiryMinutes} may be null.
+     */
+    public SentMessage sendOTP(SendOptions options, String code, String body, Integer expiryMinutes) {
+        Map<String, Object> payload = base(options);
+        payload.put("code", code);
+        if (body != null) payload.put("body", body);
+        if (expiryMinutes != null) payload.put("expiry_minutes", expiryMinutes);
+        return send("/messages/otp", payload, options);
+    }
+
+    /** {@code GET /messages/scheduled?limit=} — list scheduled sends, capped at {@code limit} (null = default). */
+    public Map<String, Object> listScheduled(Integer limit) {
+        return getMap("/messages/scheduled" + Paths.query().add("limit", limit));
+    }
+
+    /** {@code PATCH /messages/{id}} — edit the text of a sent message ({@code id} = wa_message_id). */
+    public Map<String, Object> editMessage(String id, String text) {
+        return requestMap("PATCH", "/messages/" + seg(id, "id"), body("text", text));
+    }
+
+    /**
+     * {@code DELETE /messages/{id}?for_everyone=} — revoke a message.
+     *
+     * @param forEveryone true to delete for everyone; null uses the server default
+     */
+    public void revokeMessage(String id, Boolean forEveryone) {
+        exec("DELETE", "/messages/" + seg(id, "id") + Paths.query().add("for_everyone", forEveryone), null);
+    }
+
+    /**
+     * {@code POST /messages/forward} — forward a message (experimental).
+     *
+     * @param instanceId  number that forwards
+     * @param to          destination phone or JID
+     * @param fromChat    chat JID where the original message lives
+     * @param waMessageId the original wa_message_id
+     */
+    public Map<String, Object> forwardMessage(String instanceId, String to, String fromChat, String waMessageId) {
+        return postMap("/messages/forward",
+                body("instance_id", instanceId, "to", to, "from_chat", fromChat, "wa_message_id", waMessageId));
+    }
+
+    /**
+     * {@code POST /messages/{id}/read} — mark messages as read.
+     *
+     * @param id           wa_message_id (used when {@code waMessageIds} is null)
+     * @param instanceId   number
+     * @param chat         chat JID
+     * @param sender       author JID (groups); null to omit
+     * @param waMessageIds several ids at once; null to omit
+     */
+    public void markRead(String id, String instanceId, String chat, String sender, List<String> waMessageIds) {
+        exec("POST", "/messages/" + seg(id, "id") + "/read",
+                body("instance_id", instanceId, "chat", chat, "sender", sender, "wa_message_ids", waMessageIds));
+    }
+
+    // ------------------------------------------------------------------
+    // Chats, labels, blocking, calls
+    // ------------------------------------------------------------------
+
+    /** {@code POST /chats/{jid}/mute} — mute ({@code on=true}) or unmute a chat. */
+    public void muteChat(String jid, String instanceId, boolean on) {
+        exec("POST", "/chats/" + seg(jid, "jid") + "/mute", chatToggle(instanceId, on));
+    }
+
+    /** {@code POST /chats/{jid}/labels} — apply ({@code apply=true}) or remove a WhatsApp Business label. */
+    public void applyChatLabel(String jid, String instanceId, String labelId, boolean apply) {
+        exec("POST", "/chats/" + seg(jid, "jid") + "/labels",
+                body("instance_id", instanceId, "label_id", labelId, "apply", apply));
+    }
+
+    /** {@code GET /labels?instance_id=} — the number's WhatsApp Business labels. */
+    public Map<String, Object> listLabels(String instanceId) {
+        return getMap("/labels" + query("instance_id", instanceId));
+    }
+
+    /** {@code POST /labels} — create a label ({@code color} may be null). */
+    public Map<String, Object> createLabel(String instanceId, String name, String color) {
+        return postMap("/labels", body("instance_id", instanceId, "name", name, "color", color));
+    }
+
+    /** {@code DELETE /labels/{id}?instance_id=} — delete a label. */
+    public void deleteLabel(String id, String instanceId) {
+        exec("DELETE", "/labels/" + seg(id, "id") + query("instance_id", instanceId), null);
+    }
+
+    /** {@code POST /contacts/{jid}/block} — block a contact on the number. */
+    public void blockContact(String jid, String instanceId) {
+        exec("POST", "/contacts/" + seg(jid, "jid") + "/block", body("instance_id", instanceId));
+    }
+
+    /** {@code POST /contacts/{jid}/unblock} — unblock a contact on the number. */
+    public void unblockContact(String jid, String instanceId) {
+        exec("POST", "/contacts/" + seg(jid, "jid") + "/unblock", body("instance_id", instanceId));
+    }
+
+    /** {@code GET /blocklist?instance_id=} — the number's blocked contacts. */
+    public Map<String, Object> getBlocklist(String instanceId) {
+        return getMap("/blocklist" + query("instance_id", instanceId));
+    }
+
+    /** {@code POST /calls/reject} — reject an incoming call (ids come from the {@code call.*} webhook). */
+    public void rejectCall(String instanceId, String callId, String callFrom) {
+        exec("POST", "/calls/reject", body("instance_id", instanceId, "call_id", callId, "call_from", callFrom));
+    }
+
+    /** {@code POST /calls/offer} — start a call (experimental). {@code video} may be null (voice). */
+    public Map<String, Object> offerCall(String instanceId, String to, Boolean video) {
+        return postMap("/calls/offer", body("instance_id", instanceId, "to", to, "video", video));
+    }
+
+    /** {@code PATCH /instances/{id}/privacy} — set a privacy setting (e.g. {@code last} → {@code contacts}). */
+    public void setPrivacy(String id, String setting, String value) {
+        exec("PATCH", "/instances/" + seg(id, "id") + "/privacy", body("setting", setting, "value", value));
+    }
+
+    // ------------------------------------------------------------------
+    // Instances (extras) and the official rail (WhatsApp Cloud API)
+    // ------------------------------------------------------------------
+
+    /**
+     * {@code GET /instances} — list numbers, optionally the ARCHIVED ones.
+     *
+     * @param projectId a project id, {@code "all"}, or null for the active project
+     * @param archived  true lists the archived numbers ({@code archived=1}) instead of the active ones
+     */
+    public Map<String, Object> listInstances(String projectId, boolean archived) {
+        return getMap("/instances" + Paths.query().add("project_id", projectId).add("archived", archived ? "1" : null));
+    }
+
+    /** {@code DELETE /instances/{id}} — delete a number (logs it out first). */
+    public void deleteInstance(String id) {
+        exec("DELETE", "/instances/" + seg(id, "id"), null);
+    }
+
+    /** {@code POST /instances/{id}/logout} — log the number out of WhatsApp (unpairs the device). */
+    public void logoutInstance(String id) {
+        exec("POST", "/instances/" + seg(id, "id") + "/logout", null);
+    }
+
+    /** {@code POST /instances/{id}/archive} — archive a number (keeps history, frees the slot). */
+    public void archiveInstance(String id) {
+        exec("POST", "/instances/" + seg(id, "id") + "/archive", null);
+    }
+
+    /** {@code POST /instances/{id}/unarchive} — bring an archived number back. */
+    public void unarchiveInstance(String id) {
+        exec("POST", "/instances/" + seg(id, "id") + "/unarchive", null);
+    }
+
+    /** {@code PATCH /instances/{id}/proxy} — set (or clear, with {@code ""}) the number's proxy URL. */
+    public void setInstanceProxy(String id, String proxyUrl) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("proxy_url", proxyUrl);
+        exec("PATCH", "/instances/" + seg(id, "id") + "/proxy", payload);
+    }
+
+    /**
+     * {@code PATCH /instances/{id}/inbound-filters} — what the number ignores on the way in.
+     * {@code filters} carries any of {@code ignore_groups}, {@code ignore_broadcast},
+     * {@code ignore_status} (booleans), {@code group_allowlist}, {@code group_denylist} (JID lists).
+     */
+    public Map<String, Object> setInboundFilters(String id, Map<String, Object> filters) {
+        return requestMap("PATCH", "/instances/" + seg(id, "id") + "/inbound-filters", filters);
+    }
+
+    /** {@code GET /official/account} — the project's WhatsApp Business (Cloud API) account. */
+    public Map<String, Object> getOfficialAccount() {
+        return getMap("/official/account");
+    }
+
+    /**
+     * {@code POST /official/account} — connect a WhatsApp Business account with manual
+     * credentials. {@code account} carries {@code waba_id}, {@code phone_number_id},
+     * {@code access_token} and optionally {@code display_number}, {@code verified_name},
+     * {@code status}.
+     */
+    public Map<String, Object> connectOfficialAccount(Map<String, Object> account) {
+        return postMap("/official/account", account);
+    }
+
+    /** {@code DELETE /official/account} — disconnect the project's WhatsApp Business account. */
+    public void disconnectOfficialAccount() {
+        exec("DELETE", "/official/account", null);
+    }
+
+    // ------------------------------------------------------------------
+    // Groups (extras)
+    // ------------------------------------------------------------------
+
+    /**
+     * {@code PATCH /groups/{jid}?instance_id=} — change name/topic/settings. Every field is
+     * optional (null = unchanged).
+     *
+     * @param announce only admins send messages
+     * @param locked   only admins edit the group info
+     */
+    public void updateGroup(String jid, String instanceId, String name, String topic, Boolean announce, Boolean locked) {
+        exec("PATCH", "/groups/" + seg(jid, "jid") + query("instance_id", instanceId),
+                body("name", name, "topic", topic, "announce", announce, "locked", locked));
+    }
+
+    /**
+     * {@code GET /groups/{jid}/invite?instance_id=&reset=} — the group's invite link;
+     * {@code reset=true} revokes the current link and issues a new one.
+     */
+    public GroupInvite groupInviteLink(String jid, String instanceId, Boolean reset) {
+        return request("GET", "/groups/" + seg(jid, "jid") + "/invite"
+                + Paths.query().add("instance_id", instanceId).add("reset", reset), null, GroupInvite.class);
+    }
+
+    /** {@code GET /groups/{jid}/join-requests?instance_id=} — pending requests to join. */
+    public Map<String, Object> listJoinRequests(String jid, String instanceId) {
+        return getMap("/groups/" + seg(jid, "jid") + "/join-requests" + query("instance_id", instanceId));
+    }
+
+    /** {@code POST /groups/{jid}/join-requests?instance_id=} — approve ({@code true}) or reject requests. */
+    public void updateJoinRequests(String jid, String instanceId, List<String> participants, boolean approve) {
+        exec("POST", "/groups/" + seg(jid, "jid") + "/join-requests" + query("instance_id", instanceId),
+                body("participants", participants, "approve", approve));
+    }
+
+    // ------------------------------------------------------------------
+    // Contacts (CRM base: tags, groups, opt-in/out, suppressions)
+    // ------------------------------------------------------------------
+
+    /**
+     * {@code GET /contacts} — the contact base with every filter of the API. Keys are the
+     * query names: {@code search}, {@code tags}, {@code tags_match} ({@code any|all}),
+     * {@code groups}, {@code project_id}, {@code instance_id}, {@code status}, {@code city},
+     * {@code state}, {@code country}, {@code zip}, {@code document}, {@code has_email},
+     * {@code last_activity_after}, {@code last_activity_before}, {@code created_after},
+     * {@code created_before}, {@code sort}, {@code limit}, {@code offset}. Lists go as CSV,
+     * booleans as {@code true/false}, {@link java.time.Instant}/{@link java.time.OffsetDateTime}
+     * as ISO 8601 UTC; null values are omitted.
+     */
+    public Map<String, Object> listContacts(Map<String, ?> filters) {
+        return getMap("/contacts" + Paths.query().addAll(filters));
+    }
+
+    /**
+     * {@code POST /contacts} — create a contact. {@code contact} carries {@code phone}
+     * (required, {@code +DDIdigits}) and any of {@code name}, {@code email}, {@code document},
+     * {@code document_type}, {@code address} (map).
+     */
+    public Map<String, Object> createContact(Map<String, Object> contact) {
+        return postMap("/contacts", contact);
+    }
+
+    /** {@code GET /contacts/{id}} — one contact. */
+    public Map<String, Object> getContact(String id) {
+        return getMap("/contacts/" + seg(id, "id"));
+    }
+
+    /**
+     * {@code PATCH /contacts/{id}} — update a contact. Only the keys present are sent; a key
+     * mapped to {@code null} is sent as JSON {@code null} (clears the field), an absent key
+     * is left unchanged.
+     */
+    public Map<String, Object> updateContact(String id, Map<String, Object> changes) {
+        return requestMap("PATCH", "/contacts/" + seg(id, "id"), changes);
+    }
+
+    /** {@code DELETE /contacts/{id}} — delete a contact. */
+    public void deleteContact(String id) {
+        exec("DELETE", "/contacts/" + seg(id, "id"), null);
+    }
+
+    /** {@code GET /contacts/{id}/history?limit=} — the contact's timeline (messages + events). */
+    public Map<String, Object> getContactHistory(String id, Integer limit) {
+        return getMap("/contacts/" + seg(id, "id") + "/history" + Paths.query().add("limit", limit));
+    }
+
+    /** {@code POST /contacts/{id}/notes} — add an internal note to the timeline. */
+    public void addContactNote(String id, String body) {
+        exec("POST", "/contacts/" + seg(id, "id") + "/notes", body("body", body));
+    }
+
+    /** {@code POST /contacts/{id}/tags} — add/remove tag keys (either list may be null). */
+    public Map<String, Object> mutateContactTags(String id, List<String> add, List<String> remove) {
+        return postMap("/contacts/" + seg(id, "id") + "/tags", body("add", add, "remove", remove));
+    }
+
+    /** {@code POST /contacts/{id}/groups} — add/remove contact-group keys (either list may be null). */
+    public Map<String, Object> mutateContactGroups(String id, List<String> add, List<String> remove) {
+        return postMap("/contacts/" + seg(id, "id") + "/groups", body("add", add, "remove", remove));
+    }
+
+    /** {@code POST /contacts/{id}/optout} — record the contact's opt-out (stops sends to them). */
+    public Map<String, Object> optOutContact(String id) {
+        return postMap("/contacts/" + seg(id, "id") + "/optout", null);
+    }
+
+    /** {@code POST /contacts/{id}/suppress} — add the contact to the suppression list. */
+    public Map<String, Object> suppressContact(String id) {
+        return postMap("/contacts/" + seg(id, "id") + "/suppress", null);
+    }
+
+    /** {@code POST /contacts/{id}/optin} — record the contact's opt-in (lifts an opt-out). */
+    public Map<String, Object> optInContact(String id) {
+        return postMap("/contacts/" + seg(id, "id") + "/optin", null);
+    }
+
+    /** {@code GET /tags} — the account's tags (with contact counts). */
+    public Map<String, Object> listTags() {
+        return getMap("/tags");
+    }
+
+    /** {@code POST /tags} — create a tag. {@code color} (hex) may be null. */
+    public Map<String, Object> createTag(String key, String name, String color) {
+        return postMap("/tags", body("key", key, "name", name, "color", color));
+    }
+
+    /** {@code DELETE /tags/{id}} — delete a tag. */
+    public void deleteTag(String id) {
+        exec("DELETE", "/tags/" + seg(id, "id"), null);
+    }
+
+    /** {@code GET /contact-groups} — the account's contact groups (with counts). */
+    public Map<String, Object> listContactGroups() {
+        return getMap("/contact-groups");
+    }
+
+    /** {@code POST /contact-groups} — create a contact group. {@code color} (hex) may be null. */
+    public Map<String, Object> createContactGroup(String key, String name, String color) {
+        return postMap("/contact-groups", body("key", key, "name", name, "color", color));
+    }
+
+    /** {@code DELETE /contact-groups/{id}} — delete a contact group. */
+    public void deleteContactGroup(String id) {
+        exec("DELETE", "/contact-groups/" + seg(id, "id"), null);
+    }
+
+    /** {@code GET /suppressions?limit=} — phones that never receive sends. */
+    public Map<String, Object> listSuppressions(Integer limit) {
+        return getMap("/suppressions" + Paths.query().add("limit", limit));
+    }
+
+    /** {@code POST /suppressions} — suppress a phone ({@code reason} may be null). */
+    public void createSuppression(String phone, String reason) {
+        exec("POST", "/suppressions", body("phone", phone, "reason", reason));
+    }
+
+    /** {@code DELETE /suppressions?phone=} — lift a suppression. */
+    public void deleteSuppression(String phone) {
+        exec("DELETE", "/suppressions" + query("phone", phone), null);
+    }
+
+    // ------------------------------------------------------------------
+    // Campaigns (extras)
+    // ------------------------------------------------------------------
+
+    /** {@code GET /campaigns?limit=} — list campaigns, capped at {@code limit} (null = default). */
+    public Map<String, Object> listCampaigns(Integer limit) {
+        return getMap("/campaigns" + Paths.query().add("limit", limit));
+    }
+
+    /** {@code GET /campaigns/eligibility?pool_id=} — which numbers may dispatch a campaign now. */
+    public Map<String, Object> getCampaignEligibility(String poolId) {
+        return getMap("/campaigns/eligibility" + query("pool_id", poolId));
+    }
+
+    /** {@code POST /campaigns/media} (multipart) — upload a file for campaign variations; returns {@code {url}}. */
+    public Map<String, Object> uploadCampaignMedia(byte[] content, String filename, String contentType) {
+        return upload("/campaigns/media", content, filename, contentType);
+    }
+
+    /** {@code POST /campaigns/media} (multipart) — upload a file from disk. */
+    public Map<String, Object> uploadCampaignMedia(java.nio.file.Path file) {
+        return upload("/campaigns/media", file);
+    }
+
+    /** {@code GET /campaigns/{id}/recipients?limit=} — recipients, capped at {@code limit}. */
+    public Map<String, Object> listCampaignRecipients(String id, Integer limit) {
+        return getMap("/campaigns/" + seg(id, "id") + "/recipients" + Paths.query().add("limit", limit));
+    }
+
+    // ------------------------------------------------------------------
+    // Pools (number rotation groups)
+    // ------------------------------------------------------------------
+
+    /** {@code GET /pools} — the project's number pools. */
+    public Map<String, Object> listPools() {
+        return getMap("/pools");
+    }
+
+    /**
+     * {@code POST /pools} — create a pool.
+     *
+     * @param strategy e.g. {@code round_robin}; null for the server default
+     * @param isDefault make it the project's default pool; null to omit
+     */
+    public Map<String, Object> createPool(String name, String strategy, Boolean isDefault) {
+        return postMap("/pools", body("name", name, "strategy", strategy, "is_default", isDefault));
+    }
+
+    /** {@code GET /pools/{id}} — one pool with its members. */
+    public Map<String, Object> getPool(String id) {
+        return getMap("/pools/" + seg(id, "id"));
+    }
+
+    /** {@code POST /pools/{id}/numbers} — add a number to the pool. */
+    public void addPoolNumber(String id, String instanceId) {
+        exec("POST", "/pools/" + seg(id, "id") + "/numbers", body("instance_id", instanceId));
+    }
+
+    // ------------------------------------------------------------------
+    // Webhooks (extras)
+    // ------------------------------------------------------------------
+
+    /** {@code POST /webhooks/trigger} — fire a sample event of {@code eventType} to the subscribed webhook. */
+    public Map<String, Object> triggerWebhookEvent(String eventType) {
+        return postMap("/webhooks/trigger", body("event_type", eventType));
+    }
+
+    // ------------------------------------------------------------------
+    // Account, profile, projects (extras)
+    // ------------------------------------------------------------------
+
+    /** {@code GET /healthz} — API liveness ({@code status}, {@code version}). */
+    public Map<String, Object> getHealth() {
+        return getMap("/healthz");
+    }
+
+    /** {@code GET /me} — the authenticated user/account. */
+    public Map<String, Object> getMe() {
+        return getMap("/me");
+    }
+
+    /** {@code PATCH /me} — update the user profile. Every argument is optional (null = unchanged). */
+    public Map<String, Object> updateProfile(String name, String phone, String jobTitle, String locale) {
+        return requestMap("PATCH", "/me", body("name", name, "phone", phone, "job_title", jobTitle, "locale", locale));
+    }
+
+    /** {@code PATCH /account} — rename the account (admin). */
+    public Map<String, Object> updateAccount(String name) {
+        return requestMap("PATCH", "/account", body("name", name));
+    }
+
+    /**
+     * {@code POST /projects} — create a project choosing its rail.
+     *
+     * @param apiMode {@code UNOFFICIAL} (WhatsApp Web) or {@code OFFICIAL} (Cloud API); immutable
+     *                after creation; null for the server default
+     */
+    public Project createProject(String name, String apiMode) {
+        return post("/projects", body("name", name, "api_mode", apiMode), Project.class);
+    }
+
+    /** {@code GET /projects/health} — number status counts per project. */
+    public Map<String, Object> getProjectsHealth() {
+        return getMap("/projects/health");
+    }
+
+    /** {@code PATCH /projects/{id}} — rename/recolor a project. Every field is optional (null = unchanged). */
+    public void updateProject(String id, String name, String logoUrl, String color) {
+        exec("PATCH", "/projects/" + seg(id, "id"), body("name", name, "logo_url", logoUrl, "color", color));
+    }
+
+    /** {@code DELETE /projects/{id}} — delete a project (admin). */
+    public void deleteProject(String id) {
+        exec("DELETE", "/projects/" + seg(id, "id"), null);
+    }
+
+    /** {@code GET /projects/{id}/brand} — the identity of another project's numbers. */
+    public BrandProfile getProjectBrand(String id) {
+        return request("GET", "/projects/" + seg(id, "id") + "/brand", null, BrandProfile.class);
+    }
+
+    /** {@code PUT /projects/{id}/brand} — update the identity of another project's numbers. */
+    public BrandProfile setProjectBrand(String id, BrandProfile brand) {
+        return request("PUT", "/projects/" + seg(id, "id") + "/brand", brand, BrandProfile.class);
+    }
+
+    /** {@code POST /projects/{id}/logo} (multipart) — upload the project logo; returns {@code {logo_url}}. */
+    public Map<String, Object> uploadProjectLogo(String id, byte[] content, String filename, String contentType) {
+        return upload("/projects/" + seg(id, "id") + "/logo", content, filename, contentType);
+    }
+
+    /** {@code POST /projects/{id}/logo} (multipart) — upload the project logo from disk. */
+    public Map<String, Object> uploadProjectLogo(String id, java.nio.file.Path file) {
+        return upload("/projects/" + seg(id, "id") + "/logo", file);
+    }
+
+    /** {@code POST /brand/logo} (multipart) — upload the brand logo of the active project. */
+    public Map<String, Object> uploadBrandLogo(byte[] content, String filename, String contentType) {
+        return upload("/brand/logo", content, filename, contentType);
+    }
+
+    /** {@code POST /brand/logo} (multipart) — upload the brand logo from disk. */
+    public Map<String, Object> uploadBrandLogo(java.nio.file.Path file) {
+        return upload("/brand/logo", file);
+    }
+
+    // ------------------------------------------------------------------
+    // Billing: plan, add-ons cart, invoices
+    // ------------------------------------------------------------------
+
+    /** {@code GET /me/entitlements} — what the account's plan and add-ons allow. */
+    public Map<String, Object> getMyEntitlements() {
+        return getMap("/me/entitlements");
+    }
+
+    /** {@code POST /me/plan/upgrade} — put the Pro plan in the cart (returns the cart). */
+    public Map<String, Object> upgradePlan() {
+        return postMap("/me/plan/upgrade", null);
+    }
+
+    /** {@code POST /me/plan/cancel} — cancel Pro at the end of the period (returns entitlements). */
+    public Map<String, Object> cancelPlan() {
+        return postMap("/me/plan/cancel", null);
+    }
+
+    /** {@code POST /me/plan/uncancel} — undo a scheduled cancellation. */
+    public Map<String, Object> uncancelPlan() {
+        return postMap("/me/plan/uncancel", null);
+    }
+
+    /** {@code GET /me/subscription} — the recurring subscription (status, renewal, cancellation). */
+    public Map<String, Object> getMySubscription() {
+        return getMap("/me/subscription");
+    }
+
+    /**
+     * {@code POST /me/addons} — add (+) or remove (−) add-ons in the cart.
+     *
+     * @param kind  e.g. {@code number}, {@code project}, {@code campaigns}, {@code retention_block}
+     * @param delta units to add (positive) or remove (negative)
+     */
+    public Map<String, Object> changeAddon(String kind, int delta) {
+        return postMap("/me/addons", body("kind", kind, "delta", delta));
+    }
+
+    /** {@code GET /me/addons/cart} — the add-on cart. */
+    public Map<String, Object> getAddonCart() {
+        return getMap("/me/addons/cart");
+    }
+
+    /** {@code DELETE /me/addons/cart} — empty the add-on cart. */
+    public Map<String, Object> clearAddonCart() {
+        return requestMap("DELETE", "/me/addons/cart", null);
+    }
+
+    /** {@code POST /me/addons/cart/checkout} — check out the cart (one invoice); {@code saveCard} may be null. */
+    public Map<String, Object> checkoutAddonCart(Boolean saveCard) {
+        return postMap("/me/addons/cart/checkout", body("save_card", saveCard));
+    }
+
+    /** {@code GET /me/invoices} — the account's invoices. */
+    public Map<String, Object> listMyInvoices() {
+        return getMap("/me/invoices");
+    }
+
+    /** {@code POST /me/invoices/{id}/pay} — start paying an open invoice (returns the Stripe client secret). */
+    public Map<String, Object> payInvoice(String id) {
+        return postMap("/me/invoices/" + seg(id, "id") + "/pay", null);
+    }
+
+    /** {@code GET /billing/config} — whether billing is enabled and the Stripe publishable key. */
+    public Map<String, Object> getBillingConfig() {
+        return getMap("/billing/config");
+    }
+
+    /** {@code GET /pricing} — public plans and prices per currency. */
+    public Map<String, Object> getPricing() {
+        return getMap("/pricing");
     }
 
     // ------------------------------------------------------------------
@@ -922,16 +1548,20 @@ public final class BzapperClient {
         if (options.mentions() != null) m.put("mentions", options.mentions());
         if (options.sticky() != null) m.put("sticky", options.sticky());
         if (options.scheduledAt() != null) m.put("scheduled_at", options.scheduledAt());
+        if (options.groups() != null) m.put("groups", options.groups());
+        if (options.tags() != null) m.put("tags", options.tags());
+        if (options.force() != null) m.put("force", options.force());
         return m;
     }
 
     /** Send POST: {@code options.idempotencyKey()} goes in the {@code Idempotency-Key} header. */
     private SentMessage send(String path, Map<String, Object> payload, SendOptions options) {
         String key = options.idempotencyKey();
-        if (key == null || key.isEmpty()) {
-            return post(path, payload, SentMessage.class);
+        RequestOptions opts = defaults;
+        if (key != null && !key.isEmpty()) {
+            opts = (defaults == null ? RequestOptions.builder() : defaults.toBuilder()).idempotencyKey(key).build();
         }
-        return transport.request("POST", path, payload, SentMessage.class, Map.of("Idempotency-Key", key));
+        return transport.request("POST", path, payload, SentMessage.class, opts);
     }
 
     private <T> T post(String path, Object body, Class<T> type) {
@@ -952,12 +1582,46 @@ public final class BzapperClient {
         return request(method, path, body, Map.class);
     }
 
+    private void exec(String method, String path, Object body) {
+        request(method, path, body, Void.class);
+    }
+
     private <T> T request(String method, String path, Object body, Class<T> type) {
-        return transport.request(method, path, body, type);
+        return transport.request(method, path, body, type, defaults);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> upload(String path, byte[] content, String filename, String contentType) {
+        return transport.multipart(path, new HttpTransport.FilePart("file", filename, contentType, content),
+                null, Map.class, defaults);
+    }
+
+    private Map<String, Object> upload(String path, java.nio.file.Path file) {
+        Objects.requireNonNull(file, "file");
+        try {
+            String type = java.nio.file.Files.probeContentType(file);
+            return upload(path, java.nio.file.Files.readAllBytes(file), file.getFileName().toString(), type);
+        } catch (java.io.IOException e) {
+            throw new java.io.UncheckedIOException(e);
+        }
+    }
+
+    private static Map<String, Object> body(Object... keyValues) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        for (int i = 0; i < keyValues.length; i += 2) {
+            if (keyValues[i + 1] != null) {
+                m.put((String) keyValues[i], keyValues[i + 1]);
+            }
+        }
+        return m;
     }
 
     private static String enc(String value) {
-        return HttpTransport.enc(value);
+        return Paths.q(value);
+    }
+
+    private static String seg(String value, String name) {
+        return Paths.seg(value, name);
     }
 
     /** Builds a single-param query string ({@code "?key=value"}) or {@code ""} when value is null. */

@@ -113,6 +113,37 @@ public final class Webhooks {
     }
 
     /**
+     * Stateless check (the Berni SDK standard {@code verify(secret, rawBody, signatureHeader)}):
+     * {@code true} iff {@code signatureHeader} is {@code sha256=<hex>} of
+     * {@code HMAC_SHA256(secret, rawBody)}. Timing-safe; never throws on bad input.
+     */
+    public static boolean verify(String secret, byte[] rawBody, String signatureHeader) {
+        if (secret == null || secret.isEmpty()) {
+            return false;
+        }
+        return new Webhooks(secret).verify(rawBody, signatureHeader);
+    }
+
+    /** Stateless check over the UTF-8 bytes of {@code rawBody}. */
+    public static boolean verify(String secret, String rawBody, String signatureHeader) {
+        return rawBody != null && verify(secret, rawBody.getBytes(StandardCharsets.UTF_8), signatureHeader);
+    }
+
+    /**
+     * Stateless {@code constructEvent(secret, rawBody, signatureHeader)}: verifies and parses.
+     *
+     * @throws WebhookSignatureException if the signature is missing or invalid
+     */
+    public static WebhookEvent constructEvent(String secret, byte[] rawBody, String signatureHeader) {
+        return new Webhooks(secret).constructEvent(rawBody, signatureHeader);
+    }
+
+    /** Stateless {@code constructEvent} over the UTF-8 bytes of {@code rawBody}. */
+    public static WebhookEvent constructEvent(String secret, String rawBody, String signatureHeader) {
+        return new Webhooks(secret).constructEvent(rawBody, signatureHeader);
+    }
+
+    /**
      * Verifies the signature and parses the body into a typed {@link WebhookEvent}
      * (no dispatch).
      *
