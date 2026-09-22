@@ -21,17 +21,17 @@ Maven (`br.com.bernisoftware:bzapper`):
 <dependency>
   <groupId>br.com.bernisoftware</groupId>
   <artifactId>bzapper</artifactId>
-  <version>0.6.2</version>
+  <version>0.7.1</version>
 </dependency>
 ```
 
 Gradle:
 
 ```kotlin
-implementation("br.com.bernisoftware:bzapper:0.6.2")
+implementation("br.com.bernisoftware:bzapper:0.7.1")
 ```
 
-> **Pin the exact version** (`0.6.2`, not a range). Every release note states whether it
+> **Pin the exact version** (`0.7.1`, not a range). Every release note states whether it
 > changes the public surface (a breaking signature change) or is purely additive.
 
 The SDK's **only** runtime dependency is **Jackson**, pulled in **transitively** — you
