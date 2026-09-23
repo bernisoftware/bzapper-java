@@ -3,11 +3,13 @@ package com.bernisoftware.bzapper;
 import com.bernisoftware.bzapper.model.AccountUsage;
 import com.bernisoftware.bzapper.model.AccountUser;
 import com.bernisoftware.bzapper.model.ApiKeyCreated;
+import com.bernisoftware.bzapper.model.ApiKeyRotated;
 import com.bernisoftware.bzapper.model.BrandApplyResult;
 import com.bernisoftware.bzapper.model.BrandProfile;
 import com.bernisoftware.bzapper.model.Button;
 import com.bernisoftware.bzapper.model.ConnectResult;
 import com.bernisoftware.bzapper.model.ContactCheck;
+import com.bernisoftware.bzapper.model.ContactImportResult;
 import com.bernisoftware.bzapper.model.Group;
 import com.bernisoftware.bzapper.model.GroupInvite;
 import com.bernisoftware.bzapper.model.Instance;
@@ -526,6 +528,40 @@ public final class BzapperClient {
     /** {@code DELETE /keys/{id}} — revoke an API key. */
     public void revokeKey(String id) {
         request("DELETE", "/keys/" + seg(id, "id"), null, Void.class);
+    }
+
+    /**
+     * {@code POST /keys/{id}/rotate} — rotate an API key with the default grace period of 24 h
+     * for the old one. Same as {@link #rotateKey(String, Integer) rotateKey(id, null)}.
+     */
+    public ApiKeyRotated rotateKey(String id) {
+        return rotateKey(id, null);
+    }
+
+    /**
+     * {@code POST /keys/{id}/rotate} — rotate an API key (admin). Creates a NEW key inheriting the
+     * old one's role, scopes, project and name, and keeps the OLD key working for a grace period,
+     * so a running integration does not break mid-deploy. The raw new key is shown only ONCE, in
+     * {@link ApiKeyRotated#apiKey()} — store it now.
+     *
+     * <pre>{@code
+     * ApiKeyRotated r = client.rotateKey(keyId, 3600); // old key dies in 1 h
+     * deploy(r.apiKey());
+     * }</pre>
+     *
+     * <p>After the deadline the old key answers {@code 401 key_expired}. Partner keys (bZapper
+     * Connect) rotate through {@code BzapperPartner.rotateConnectionKey} instead.
+     *
+     * @param id               the key to rotate
+     * @param revokeInSeconds  grace period for the OLD key in seconds; {@code 0} revokes it right
+     *                         away, {@code null} uses the API default (86400, max 2592000)
+     * @throws PermissionDeniedException {@code admin_required}
+     * @throws NotFoundException        {@code not_found}
+     * @throws ConflictException        {@code key_already_revoked} / {@code key_already_expired}
+     */
+    public ApiKeyRotated rotateKey(String id, Integer revokeInSeconds) {
+        return post("/keys/" + seg(id, "id") + "/rotate",
+                body("revoke_in_seconds", revokeInSeconds), ApiKeyRotated.class);
     }
 
     // ------------------------------------------------------------------
@@ -1201,6 +1237,74 @@ public final class BzapperClient {
      */
     public Map<String, Object> listContacts(Map<String, ?> filters) {
         return getMap("/contacts" + Paths.query().addAll(filters));
+    }
+
+    /**
+     * {@code GET /contacts/export} — the contact base as CSV text, with the SAME filters as
+     * {@link #listContacts(Map)}. Exports everything when {@code filters} is null or empty.
+     *
+     * <p>The columns are {@code phone,name,email,status,source,tags,groups,created_at,
+     * last_activity_at}; tags and groups come {@code ;}-joined and timestamps are RFC 3339 in UTC.
+     * The API streams the file; this method buffers it into a {@link String} (UTF-8) — cap the
+     * volume with {@code limit} and write it straight to disk when the base is large:
+     *
+     * <pre>{@code
+     * String csv = client.exportContacts(Map.of("tags", List.of("vip"), "status", "active"));
+     * Files.writeString(Path.of("contacts.csv"), csv, StandardCharsets.UTF_8);
+     * }</pre>
+     *
+     * @param filters the query filters of {@link #listContacts(Map)} (lists as CSV, booleans as
+     *                {@code true/false}, dates as ISO 8601 UTC; nulls omitted)
+     * @return the raw CSV text, exactly as the API produced it (never parsed as JSON)
+     */
+    public String exportContacts(Map<String, ?> filters) {
+        return transport.text("GET", "/contacts/export" + Paths.query().addAll(filters), "text/csv", defaults);
+    }
+
+    /** {@code GET /contacts/export} — the whole contact base as CSV text, unfiltered. */
+    public String exportContacts() {
+        return exportContacts(null);
+    }
+
+    /**
+     * {@code POST /contacts/import} — upsert up to 1000 contacts by phone in one call. Same as
+     * {@link #importContacts(List, Boolean) importContacts(contacts, null)}.
+     */
+    public ContactImportResult importContacts(List<? extends Map<String, ?>> contacts) {
+        return importContacts(contacts, null);
+    }
+
+    /**
+     * {@code POST /contacts/import} — upsert up to 1000 contacts by phone in one call. Each row
+     * carries {@code phone} (required, {@code +DDIdigits}) and any of {@code name}, {@code email},
+     * {@code document}, {@code document_type}, {@code address} (map), {@code tags} and
+     * {@code groups} (lists of keys, created on demand).
+     *
+     * <p>A new contact is created with {@code source: import} and {@code status:
+     * pending_validation} (it still needs opt-in before a campaign); an existing one has only the
+     * informed fields updated — a blank value never erases what is there. A suppressed, opted-out
+     * or blocked contact is reported in {@link ContactImportResult#skippedRows()} and never
+     * resurrected, and a bad row lands in {@link ContactImportResult#errors()} WITHOUT failing the
+     * rest of the call.
+     *
+     * <pre>{@code
+     * ContactImportResult dry = client.importContacts(rows, true); // validates, writes nothing
+     * if (dry.errors().isEmpty()) {
+     *     ContactImportResult done = client.importContacts(rows);
+     * }
+     * }</pre>
+     *
+     * @param contacts the rows to upsert (max 1000 — beyond that the API answers
+     *                 {@code 422 import_too_large})
+     * @param dryRun   {@code true} validates and reports everything without writing;
+     *                 {@code null} omits the flag (the API default is {@code false})
+     * @throws ValidationException {@code invalid_body} / {@code contacts_required} (400),
+     *                             {@code import_too_large} (422)
+     */
+    public ContactImportResult importContacts(List<? extends Map<String, ?>> contacts, Boolean dryRun) {
+        Objects.requireNonNull(contacts, "contacts");
+        return post("/contacts/import", body("contacts", contacts, "dry_run", dryRun),
+                ContactImportResult.class);
     }
 
     /**

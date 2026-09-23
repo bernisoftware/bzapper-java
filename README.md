@@ -21,17 +21,17 @@ Maven (`br.com.bernisoftware:bzapper`):
 <dependency>
   <groupId>br.com.bernisoftware</groupId>
   <artifactId>bzapper</artifactId>
-  <version>0.7.1</version>
+  <version>0.8.0</version>
 </dependency>
 ```
 
 Gradle:
 
 ```kotlin
-implementation("br.com.bernisoftware:bzapper:0.7.1")
+implementation("br.com.bernisoftware:bzapper:0.8.0")
 ```
 
-> **Pin the exact version** (`0.7.1`, not a range). Every release note states whether it
+> **Pin the exact version** (`0.8.0`, not a range). Every release note states whether it
 > changes the public surface (a breaking signature change) or is purely additive.
 
 The SDK's **only** runtime dependency is **Jackson**, pulled in **transitively** — you
@@ -302,6 +302,57 @@ client.createContactGroup("customers", "Customers", null); // listContactGroups 
 client.createSuppression("+5511977776666", "asked to stop"); // listSuppressions / deleteSuppression
 ```
 
+### Bulk import (up to 1000 rows per call)
+
+`importContacts` upserts by phone: a new contact comes in as `source: import` /
+`status: pending_validation` (it still needs opt-in before a campaign), an existing one has only
+the informed fields updated — a blank value never erases what is there. Tags and groups are
+created on demand. A bad row lands in `errors()` and a suppressed/opted-out/blocked one in
+`skippedRows()`, **without** failing the rest of the call. Send `dryRun = true` first to validate
+and write nothing.
+
+```java
+import com.bernisoftware.bzapper.model.ContactImportIssue;
+import com.bernisoftware.bzapper.model.ContactImportResult;
+
+List<Map<String, Object>> rows = List.of(
+        Map.of("phone", "+5511999998888", "name", "Ana", "email", "ana@example.com",
+               "tags", List.of("vip"), "groups", List.of("customers")),
+        Map.of("phone", "+5511977776666", "name", "Bruno",
+               "document", "12345678901", "document_type", "cpf",
+               "address", Map.of("city", "São Paulo", "state", "SP", "zip", "01310-100")));
+
+ContactImportResult dry = client.importContacts(rows, true);   // validates, writes nothing
+for (ContactImportIssue issue : dry.errors()) {
+    System.out.println("row " + issue.index() + ": " + issue.reason()); // branch on reason(), not detail()
+}
+if (dry.errors().isEmpty()) {
+    ContactImportResult done = client.importContacts(rows);     // POST /contacts/import
+    System.out.println(done.created() + " created, " + done.updated() + " updated, "
+            + done.skipped() + " skipped");
+}
+```
+
+More than 1000 rows answers `422 import_too_large` — send it in batches.
+
+### Export as CSV
+
+`exportContacts` takes the **same filters as `listContacts`** and returns the CSV **text** the API
+produced (`phone,name,email,status,source,tags,groups,created_at,last_activity_at`; tags and groups
+`;`-joined, timestamps RFC 3339 UTC). It is the one response the SDK does not parse as JSON — you
+get the raw text back, quoting and all:
+
+```java
+String csv = client.exportContacts(Map.of(
+        "tags", List.of("vip"), "status", "active", "has_email", true, "sort", "name"));
+Files.writeString(Path.of("contacts.csv"), csv, StandardCharsets.UTF_8);
+
+String everything = client.exportContacts();   // no filters
+```
+
+The API streams the file; the SDK buffers it into a `String` (UTF-8), so cap big bases with
+`limit` (max 100000 rows).
+
 ## Campaigns (Pro + campaigns add-on)
 
 ```java
@@ -346,6 +397,23 @@ ApiKeyCreated created = client.createKey("server", Role.AGENT);   // POST /keys
 System.out.println(created.apiKey());  // raw key — shown ONCE, store it now
 client.revokeKey("key-uuid");                                     // DELETE /keys/{id}
 ```
+
+**Rotate without downtime** (admin). `rotateKey` mints a new key with the old one's role, scopes,
+project and name and keeps the OLD key working for a grace period, so a running integration does
+not break mid-deploy. The raw new key is shown **once**:
+
+```java
+ApiKeyRotated rotated = client.rotateKey("key-uuid", 3600); // POST /keys/{id}/rotate — 1 h of grace
+System.out.println(rotated.apiKey());              // the new raw key — store it now
+System.out.println(rotated.oldKeyExpiresAt());     // when the old one starts answering 401 key_expired
+client.rotateKey("key-uuid");                      // default grace period: 24 h (max 30 days)
+client.rotateKey("key-uuid", 0);                   // revoke the old key right away
+```
+
+The key metadata (`rotated.key()`, `rotated.previousKey()`) carries `expires_at` (when a rotated
+key stops working) and `rotated_to` (the id of the key that replaced it). Errors come back as
+`admin_required` (403), `not_found` (404), `key_already_revoked` / `key_already_expired` (409).
+Partner keys rotate through `BzapperPartner.rotateConnectionKey` instead.
 
 ## Usage
 

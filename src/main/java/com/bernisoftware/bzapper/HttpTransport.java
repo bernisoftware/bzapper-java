@@ -132,6 +132,16 @@ final class HttpTransport {
         return decode(r, type == null || type == Void.class ? null : mapper.constructType(type));
     }
 
+    /**
+     * Resposta de TEXTO (ex.: {@code text/csv} do {@code exportContacts}): manda o {@code Accept}
+     * pedido e devolve o corpo cru, sem passar pelo decodificador JSON — a regra "2xx não-JSON =
+     * INVALID_RESPONSE" não vale aqui (BRIEF §6). Erros seguem o envelope normal.
+     */
+    String text(String method, String path, String accept, RequestOptions options) {
+        Response r = send(method, path, null, null, options, accept);
+        return new String(r.body, StandardCharsets.UTF_8);
+    }
+
     /** {@code multipart/form-data}: um arquivo + campos de texto opcionais. */
     <T> T multipart(String path, FilePart file, Map<String, String> fields, Class<T> type, RequestOptions options) {
         String boundary = "bzapper-" + UUID.randomUUID().toString().replace("-", "");
@@ -175,6 +185,11 @@ final class HttpTransport {
     }
 
     private Response send(String method, String path, byte[] payload, String contentType, RequestOptions options) {
+        return send(method, path, payload, contentType, options, "application/json");
+    }
+
+    private Response send(String method, String path, byte[] payload, String contentType, RequestOptions options,
+                          String accept) {
         URI uri = URI.create(baseUrl + path);
 
         // Gerados UMA vez por chamada lógica e repetidos em toda nova tentativa: é o
@@ -192,7 +207,7 @@ final class HttpTransport {
                 .uri(uri)
                 .timeout(attemptTimeout)
                 .header("Authorization", "Bearer " + bearer)
-                .header("Accept", "application/json")
+                .header("Accept", accept)
                 // Identifica SDK e versão para a API — é por ele que avisamos
                 // você quando a versão que roda tem correção que exige
                 // atualizar o código da integração.

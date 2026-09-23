@@ -129,6 +129,7 @@ class ConformanceTest {
         m.put("listMyKeys", (c, a) -> c.client.listKeys());
         m.put("createMyKey", (c, a) -> c.client.createKey(a.b("name"), role(a.b("role"))));
         m.put("revokeMyKey", (c, a) -> { c.client.revokeKey(a.p("id")); return null; });
+        m.put("rotateMyKey", (c, a) -> c.client.rotateKey(a.p("id"), a.bInt("revoke_in_seconds")));
 
         // Account / profile
         m.put("getMe", (c, a) -> c.client.getMe());
@@ -148,6 +149,7 @@ class ConformanceTest {
         // Contacts (CRM)
         m.put("listContacts", (c, a) -> c.client.listContacts(a.queryAll()));
         m.put("createContact", (c, a) -> c.client.createContact(a.bodyAll()));
+        m.put("importContacts", (c, a) -> c.client.importContacts(rows(a), a.bBool("dry_run")));
         m.put("getContact", (c, a) -> c.client.getContact(a.p("id")));
         m.put("updateContact", (c, a) -> c.client.updateContact(a.p("id"), a.bodyAll()));
         m.put("deleteContact", (c, a) -> { c.client.deleteContact(a.p("id")); return null; });
@@ -404,6 +406,16 @@ class ConformanceTest {
                 rows.add(new ListRow((String) row.get("id"), (String) row.get("title"), (String) row.get("description")));
             }
             out.add(new ListSection((String) s.get("title"), rows));
+        }
+        return out;
+    }
+
+    /** The {@code contacts} rows of an importContacts case, as the SDK takes them (maps). */
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> rows(Args a) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Object o : (List<Object>) a.bRaw("contacts")) {
+            out.add(map(o));
         }
         return out;
     }
@@ -797,7 +809,7 @@ class ConformanceTest {
         }
         missing.removeAll(OPS.keySet());
         assertEquals(Set.of(), missing, "ops without an SDK method — implement and map them in OPS");
-        assertEquals(159, stringList(CASES.get("ops")).size(), "ops in cases.json");
+        assertEquals(161, stringList(CASES.get("ops")).size(), "ops in cases.json");
     }
 
     @Test
