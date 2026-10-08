@@ -291,7 +291,7 @@ class ConformanceTest {
         m.put("sendSticker", (c, a) -> c.client.sendSticker(sendOptions(a), media(a)));
         m.put("sendLocation", (c, a) -> c.client.sendLocation(sendOptions(a), a.bDouble("latitude"),
                 a.bDouble("longitude"), a.b("name"), a.b("address")));
-        m.put("sendContact", (c, a) -> c.client.sendContact(sendOptions(a), a.b("contact_name"), a.b("contact_vcard")));
+        m.put("sendContact", (c, a) -> c.client.sendContact(sendOptions(a), a.b("contact_name"), a.b("contact_phone"), a.b("contact_vcard")));
         m.put("sendPoll", (c, a) -> c.client.sendPoll(sendOptions(a), a.b("name"), a.bList("options"), a.bInt("selectable_count")));
         m.put("sendReaction", (c, a) -> {
             SendOptions o = sendOptions(a);

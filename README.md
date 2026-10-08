@@ -21,17 +21,17 @@ Maven (`br.com.bernisoftware:bzapper`):
 <dependency>
   <groupId>br.com.bernisoftware</groupId>
   <artifactId>bzapper</artifactId>
-  <version>0.8.1</version>
+  <version>0.8.2</version>
 </dependency>
 ```
 
 Gradle:
 
 ```kotlin
-implementation("br.com.bernisoftware:bzapper:0.8.1")
+implementation("br.com.bernisoftware:bzapper:0.8.2")
 ```
 
-> **Pin the exact version** (`0.8.1`, not a range). Every release note states whether it
+> **Pin the exact version** (`0.8.2`, not a range). Every release note states whether it
 > changes the public surface (a breaking signature change) or is purely additive.
 
 The SDK's **only** runtime dependency is **Jackson**, pulled in **transitively** — you
@@ -141,7 +141,7 @@ client.sendSticker(to, MediaInput.url("https://example.com/sticker.webp"));
 client.sendLocation(to, -23.5505, -46.6333, "São Paulo", "Praça da Sé");
 
 // Contact (name and/or vCard, both optional)
-client.sendContact(to, "Ada Lovelace", "BEGIN:VCARD\nVERSION:3.0\nFN:Ada Lovelace\nEND:VCARD");
+client.sendContact(to, "Ada Lovelace", "+5511977776666", null);
 
 // Poll (selectableCount may be null → defaults to 1)
 client.sendPoll(to, "Lunch?", List.of("Pizza", "Sushi", "Salad"), 1);

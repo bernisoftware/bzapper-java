@@ -257,10 +257,29 @@ public final class BzapperClient {
         return send("/messages/location", payload, options);
     }
 
-    /** {@code POST /messages/contact} — send a contact card (name and/or vCard). */
+    /**
+     * {@code POST /messages/contact} — send a contact card.
+     *
+     * <p>Kept for compatibility; it cannot carry {@code contact_phone}, which the API
+     * requires alongside {@code contactName}. Prefer
+     * {@link #sendContact(SendOptions, String, String, String)}.
+     */
     public SentMessage sendContact(SendOptions options, String contactName, String contactVcard) {
+        return sendContact(options, contactName, null, contactVcard);
+    }
+
+    /**
+     * {@code POST /messages/contact} — send a contact card: a ready {@code contactVcard},
+     * or {@code contactName} plus {@code contactPhone}.
+     *
+     * @param contactPhone phone (E.164) of the contact being SHARED on the card, never the
+     *                     destination. Required together with {@code contactName}.
+     */
+    public SentMessage sendContact(SendOptions options, String contactName, String contactPhone,
+                                   String contactVcard) {
         Map<String, Object> payload = base(options);
         if (contactName != null) payload.put("contact_name", contactName);
+        if (contactPhone != null) payload.put("contact_phone", contactPhone);
         if (contactVcard != null) payload.put("contact_vcard", contactVcard);
         return send("/messages/contact", payload, options);
     }

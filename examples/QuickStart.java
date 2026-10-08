@@ -72,8 +72,7 @@ public class QuickStart {
             client.sendLocation(SendOptions.to(to), -23.5505, -46.6333, "São Paulo", "Praça da Sé");
 
             // Contact
-            client.sendContact(SendOptions.to(to), "Ada Lovelace",
-                    "BEGIN:VCARD\nVERSION:3.0\nFN:Ada Lovelace\nTEL:+5511999999999\nEND:VCARD");
+            client.sendContact(SendOptions.to(to), "Ada Lovelace", "+5511977776666", null);
 
             // Poll
             client.sendPoll(SendOptions.to(to), "Lunch?", List.of("Pizza", "Sushi", "Salad"), 1);
