@@ -332,6 +332,45 @@ public final class BzapperClient {
         return send("/messages/list", payload, options);
     }
 
+    /**
+     * {@code POST /messages/template} — send an approved template by name.
+     *
+     * <p>OFFICIAL RAIL ONLY, and the only way to start a conversation outside the
+     * 24-hour service window. The number of {@code variables} must match the approved
+     * template exactly — a mismatch is the number one cause of Meta error 132000, and
+     * the API checks it before spending the call (422).
+     *
+     * @param template  the template NAME; the id Meta assigned to it never appears
+     * @param language  e.g. {@code pt_BR}, or null when the name exists in a single
+     *                  language (if it exists in more than one, the API answers 409
+     *                  {@code template_ambiguous} rather than guessing)
+     * @param variables body values, in order ({@code {{1}}, {{2}}, …}); null to omit
+     */
+    public SentMessage sendTemplate(SendOptions options, String template, String language, List<String> variables) {
+        return sendTemplate(options, template, language, variables, null, null, null);
+    }
+
+    /**
+     * {@code POST /messages/template} — send an approved template with every parameter slot.
+     * Null arguments are omitted.
+     *
+     * @param headerVariables value for the header variable, when the template has one
+     * @param buttonVariables values for dynamic URL buttons, by button index (empty entries are skipped)
+     * @param code            AUTHENTICATION templates only: Meta requires the code both in the body
+     *                        and in the copy-code button, and the API places it in both
+     */
+    public SentMessage sendTemplate(SendOptions options, String template, String language, List<String> variables,
+                                    List<String> headerVariables, List<String> buttonVariables, String code) {
+        Map<String, Object> payload = base(options);
+        payload.put("template", template);
+        if (language != null) payload.put("language", language);
+        if (variables != null) payload.put("variables", variables);
+        if (headerVariables != null) payload.put("header_variables", headerVariables);
+        if (buttonVariables != null) payload.put("button_variables", buttonVariables);
+        if (code != null) payload.put("code", code);
+        return send("/messages/template", payload, options);
+    }
+
     // ------------------------------------------------------------------
     // Scheduled sends (scheduled_at on any send)
     // ------------------------------------------------------------------
@@ -356,6 +395,12 @@ public final class BzapperClient {
      * {@code {variables}} and spintax {@code {a|b|c}}. {@code params} carries
      * {@code variations} (required) plus optional {@code name}, {@code pool_id},
      * {@code pacing_profile} and {@code start_at}.
+     *
+     * <p>On the OFFICIAL rail each variation is an approved template instead of a
+     * body — free text only reaches people who wrote in the last 24h:
+     * {@code {"body": "", "template": {"name": "promo", "language": "pt_BR",
+     * "variables": ["{nome}", "OUTUBRO10"]}}}. The template must exist, be approved
+     * and receive as many {@code variables} as its body expects.
      */
     public Map<String, Object> createCampaign(Map<String, Object> params) {
         return postMap("/campaigns", params);
@@ -987,6 +1032,15 @@ public final class BzapperClient {
         return getMap(path);
     }
 
+    /**
+     * {@code POST /webhooks/{id}/deliveries/{delivery_id}/redeliver} — sends a FAILED delivery
+     * again (same body and event_id, signed with the current secret). Only failures from the
+     * last 7 days.
+     */
+    public Map<String, Object> redeliverWebhookDelivery(String id, String deliveryId) {
+        return postMap("/webhooks/" + seg(id, "id") + "/deliveries/" + seg(deliveryId, "deliveryId") + "/redeliver", null);
+    }
+
     // ------------------------------------------------------------------
     // Connected apps (bZapper Connect — partner software using this account)
     // ------------------------------------------------------------------
@@ -1006,6 +1060,16 @@ public final class BzapperClient {
      */
     public void revokeConnectedApp(String id) {
         request("DELETE", "/me/connections/" + seg(id, "id"), null, Void.class);
+    }
+
+    /**
+     * {@code POST /me/connections/{id}/standalone} — convert a partner-created account to
+     * general use (admin). The connection STAYS: the partner keeps working and any
+     * partnership discount keeps applying; what changes is that the account may now issue
+     * its own API keys. Irreversible.
+     */
+    public PartnerConnection convertConnectedAppToStandalone(String id) {
+        return request("POST", "/me/connections/" + seg(id, "id") + "/standalone", null, PartnerConnection.class);
     }
 
     // ==================================================================
@@ -1202,6 +1266,280 @@ public final class BzapperClient {
     /** {@code DELETE /official/account} — disconnect the project's WhatsApp Business account. */
     public void disconnectOfficialAccount() {
         exec("DELETE", "/official/account", null);
+    }
+
+    /**
+     * {@code GET /official/status} — what is ready and what is missing, checked live against
+     * Meta (number verified, display name and business review, quality, volume tier).
+     * {@code can_send} is the question that matters; {@code live} false means Meta could not be
+     * reached and the values are the last known ones.
+     */
+    public Map<String, Object> getOfficialStatus() {
+        return getMap("/official/status");
+    }
+
+    /**
+     * {@code GET /official/signup-config} — the app and configuration ids the Meta JS SDK needs
+     * to open Embedded Signup (public by nature; the app secret never leaves the server).
+     * {@code enabled} false means this installation has no Embedded Signup configured: offer the
+     * manual path ({@link #connectOfficialAccount(Map)}) instead.
+     */
+    public Map<String, Object> getOfficialSignupConfig() {
+        return getMap("/official/signup-config");
+    }
+
+    /**
+     * {@code POST /official/embedded-signup} — finish the connection with the one-time code
+     * returned by Meta's popup: exchanges it for a lasting token, subscribes the app to the
+     * WABA's webhooks and registers the number. The code expires about 30 seconds after the
+     * popup closes, so send it straight through. Returns {@code {account, warning}} — a
+     * non-fatal step that failed comes back in {@code warning} ({@code webhooks_not_subscribed}
+     * or {@code phone_not_registered}) and the account is stored either way.
+     *
+     * @param phoneNumberId optional; discovered from the WABA when the popup does not provide it
+     *                      (409 {@code multiple_phone_numbers} when the WABA has several)
+     */
+    public Map<String, Object> completeOfficialSignup(String code, String wabaId, String phoneNumberId) {
+        return postMap("/official/embedded-signup",
+                body("code", code, "waba_id", wabaId, "phone_number_id", phoneNumberId));
+    }
+
+    /**
+     * {@code GET /official/numbers} — the numbers connected to the project, default first.
+     * Each has an {@code instance_id} — the same value you pass in {@link SendOptions} to choose
+     * which number a message goes out from, exactly as on the unofficial rail.
+     */
+    public Map<String, Object> listOfficialNumbers() {
+        return getMap("/official/numbers");
+    }
+
+    /**
+     * {@code POST /official/media} (multipart) — uploads a file to Meta once, through the default
+     * number (or {@code instanceId}), and returns its {@code id} to send as {@link MediaInput#stored(String)}
+     * in many messages. Valid for 30 days, only from the number that uploaded it.
+     */
+    public Map<String, Object> uploadOfficialMedia(byte[] content, String filename, String contentType, String instanceId) {
+        return transport.multipart("/official/media" + mediaQuery(instanceId),
+                new HttpTransport.FilePart("file", filename, contentType, content), null, Map.class, defaults);
+    }
+
+    /** {@code GET /official/media/{media_id}} — checks a stored file is still valid (404 once expired). */
+    public Map<String, Object> getOfficialMedia(String mediaId, String instanceId) {
+        return getMap("/official/media/" + seg(mediaId, "mediaId") + mediaQuery(instanceId));
+    }
+
+    /** {@code DELETE /official/media/{media_id}} — deletes a stored file before it expires. */
+    public void deleteOfficialMedia(String mediaId, String instanceId) {
+        request("DELETE", "/official/media/" + seg(mediaId, "mediaId") + mediaQuery(instanceId), null, Void.class);
+    }
+
+    private static String mediaQuery(String instanceId) {
+        return instanceId == null ? "" : "?instance_id=" + java.net.URLEncoder.encode(instanceId, java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    /**
+     * {@code GET /official/webhook-events} — the raw events Meta sent for the project's accounts,
+     * newest first, with how each was processed. Pass the last {@code id} as {@code before} to
+     * page back.
+     *
+     * @param limit  1–200; null for the server default (50)
+     * @param before only events older than this id; null for the newest
+     */
+    public Map<String, Object> listMetaWebhookEvents(Integer limit, Long before) {
+        StringBuilder q = new StringBuilder();
+        if (limit != null) q.append(q.length() == 0 ? "?" : "&").append("limit=").append(limit);
+        if (before != null) q.append(q.length() == 0 ? "?" : "&").append("before=").append(before);
+        return getMap("/official/webhook-events" + q);
+    }
+
+    /**
+     * {@code GET /official/numbers/available} — the business account's numbers on Meta that are
+     * not connected to the project yet (what feeds {@link #addOfficialNumber(String)}).
+     */
+    public Map<String, Object> listAvailableOfficialNumbers() {
+        return getMap("/official/numbers/available");
+    }
+
+    /**
+     * {@code POST /official/numbers} — connect one more number from the same business account.
+     * Reuses the stored authorization (it belongs to the account, not to the number), and the
+     * number is checked against Meta before it is saved.
+     *
+     * @param phoneNumberId Meta's id of the number ({@code id} from {@link #listAvailableOfficialNumbers()})
+     */
+    public Map<String, Object> addOfficialNumber(String phoneNumberId) {
+        return postMap("/official/numbers", body("phone_number_id", phoneNumberId));
+    }
+
+    /** {@code PUT /official/numbers/{id}/default} — choose the number that sends when the request does not pick one. */
+    public void setDefaultOfficialNumber(String id) {
+        exec("PUT", "/official/numbers/" + seg(id, "id") + "/default", null);
+    }
+
+    /**
+     * {@code DELETE /official/numbers/{id}} — disconnect one number. The history stays (its
+     * mirror instance is archived, not deleted); removing the default promotes the oldest of
+     * the remaining numbers.
+     */
+    public void disconnectOfficialNumber(String id) {
+        exec("DELETE", "/official/numbers/" + seg(id, "id"), null);
+    }
+
+    /**
+     * {@code GET /official/profile} — the business profile of the project's default number
+     * (about, description, address, e-mail, sector, websites, photo), as Meta reports it.
+     * The profile lives on the NUMBER: with several numbers, see {@link #getOfficialNumberProfile(String)}.
+     */
+    public Map<String, Object> getOfficialProfile() {
+        return getMap("/official/profile");
+    }
+
+    /**
+     * {@code PUT /official/profile} — update the business profile of the default number.
+     * Validated against Meta's limits before sending (422 names the field and the overflow).
+     * Send the WHOLE profile: an empty field is not "unchanged", it clears that field on Meta —
+     * read it first with {@link #getOfficialProfile()} and send it back with your edits.
+     *
+     * @param profile any of {@code about}, {@code description}, {@code address}, {@code email},
+     *                {@code vertical} and {@code websites} (at most 2)
+     */
+    public Map<String, Object> updateOfficialProfile(Map<String, Object> profile) {
+        return requestMap("PUT", "/official/profile", profile);
+    }
+
+    /**
+     * {@code POST /official/profile/photo} (multipart) — replace the profile photo of the default
+     * number (JPEG/PNG up to 5 MB; Meta recommends 640x640). Returns the profile read back, or
+     * {@code null} when the photo was saved but the profile could not be read back right away.
+     */
+    public Map<String, Object> uploadOfficialProfilePhoto(byte[] content, String filename, String contentType) {
+        return upload("/official/profile/photo", content, filename, contentType);
+    }
+
+    /** {@code POST /official/profile/photo} (multipart) — replace the default number's photo from disk. */
+    public Map<String, Object> uploadOfficialProfilePhoto(java.nio.file.Path file) {
+        return upload("/official/profile/photo", file);
+    }
+
+    /**
+     * {@code POST /official/profile/reregister} — re-register the default number on the Cloud API,
+     * the step people forget after Meta approves a new display name (until then the old name
+     * keeps showing). Already registered counts as success.
+     */
+    public void reregisterOfficialProfile() {
+        exec("POST", "/official/profile/reregister", null);
+    }
+
+    /** {@code GET /official/numbers/{id}/profile} — the business profile of one connected number. */
+    public Map<String, Object> getOfficialNumberProfile(String id) {
+        return getMap("/official/numbers/" + seg(id, "id") + "/profile");
+    }
+
+    /**
+     * {@code PUT /official/numbers/{id}/profile} — update the business profile of one connected
+     * number. Same rules as {@link #updateOfficialProfile(Map)}: send the WHOLE profile.
+     */
+    public Map<String, Object> updateOfficialNumberProfile(String id, Map<String, Object> profile) {
+        return requestMap("PUT", "/official/numbers/" + seg(id, "id") + "/profile", profile);
+    }
+
+    /** {@code POST /official/numbers/{id}/profile/photo} (multipart) — replace one number's profile photo. */
+    public Map<String, Object> uploadOfficialNumberProfilePhoto(String id, byte[] content, String filename,
+                                                                String contentType) {
+        return upload("/official/numbers/" + seg(id, "id") + "/profile/photo", content, filename, contentType);
+    }
+
+    /** {@code POST /official/numbers/{id}/profile/photo} (multipart) — replace one number's photo from disk. */
+    public Map<String, Object> uploadOfficialNumberProfilePhoto(String id, java.nio.file.Path file) {
+        return upload("/official/numbers/" + seg(id, "id") + "/profile/photo", file);
+    }
+
+    /** {@code POST /official/numbers/{id}/profile/reregister} — re-register one number (after a display-name change). */
+    public void reregisterOfficialNumberProfile(String id) {
+        exec("POST", "/official/numbers/" + seg(id, "id") + "/profile/reregister", null);
+    }
+
+    // ------------------------------------------------------------------
+    // Templates (official rail)
+    // ------------------------------------------------------------------
+
+    /**
+     * {@code GET /templates} — the project templates, newest first. Each carries {@code status}
+     * and {@code variables} — how many values the body expects, and therefore how many you must send.
+     */
+    public Map<String, Object> listTemplates() {
+        return getMap("/templates");
+    }
+
+    /**
+     * {@code POST /templates} — create a template and submit it to Meta for review.
+     *
+     * <p>You describe header, body, footer and buttons; the API builds the component format Meta
+     * expects. Validation happens BEFORE submission (422 says what to fix), because Meta takes up
+     * to 24 hours to answer and caps how many templates you may submit. The result carries
+     * {@code template} and {@code advice} — warnings that did not block the submission but change
+     * the outcome (e.g. promotional wording in a UTILITY template, which Meta reclassifies and
+     * reprices). The decision arrives later via the {@code template.approved} /
+     * {@code template.rejected} webhooks.
+     *
+     * @param spec at least {@code name}, {@code language}, {@code category} and {@code body};
+     *             optionally {@code header}, {@code footer}, {@code buttons}, {@code code_expiry_minutes}
+     */
+    public Map<String, Object> createTemplate(Map<String, Object> spec) {
+        return postMap("/templates", spec);
+    }
+
+    /** {@code GET /templates/{id}} — one template. */
+    public Map<String, Object> getTemplate(String id) {
+        return getMap("/templates/" + seg(id, "id"));
+    }
+
+    /**
+     * {@code DELETE /templates/{id}} — delete a template here and at Meta. Meta deletes ALL
+     * languages of a name at once, so while another language of the same name is still
+     * registered here, Meta is left alone.
+     */
+    public void deleteTemplate(String id) {
+        exec("DELETE", "/templates/" + seg(id, "id"), null);
+    }
+
+    /**
+     * {@code POST /templates/sync} — import templates that exist at Meta and not here (created in
+     * WhatsApp Manager before bZapper, or a webhook that never arrived). Returns {@code {imported}}.
+     */
+    public Map<String, Object> syncTemplates() {
+        return postMap("/templates/sync", null);
+    }
+
+    /**
+     * {@code POST /templates/media} (multipart) — upload the header sample Meta reviews (JPEG, PNG,
+     * MP4 or PDF up to 10 MB); pass the returned {@code url} as the header example in
+     * {@link #createTemplate(Map)}. It is only the review sample, not the media sent on each send.
+     */
+    public Map<String, Object> uploadTemplateMedia(byte[] content, String filename, String contentType) {
+        return upload("/templates/media", content, filename, contentType);
+    }
+
+    /** {@code POST /templates/media} (multipart) — upload a template header sample from disk. */
+    public Map<String, Object> uploadTemplateMedia(java.nio.file.Path file) {
+        return upload("/templates/media", file);
+    }
+
+    /** {@code GET /templates/fallback} — {@code {template}}: the template sent when the window is closed ({@code null} when none). */
+    public Map<String, Object> getFallbackTemplate() {
+        return getMap("/templates/fallback");
+    }
+
+    /**
+     * {@code PUT /templates/fallback} — set the template sent when the 24-hour window is closed.
+     * This is what makes the same {@link #sendText} work inside and outside the window: the
+     * detour is reported in {@link SentMessage#delivery()}. Only an APPROVED template is
+     * accepted (409 otherwise).
+     *
+     * @param templateId the template id; {@code null} or {@code ""} clears the fallback
+     */
+    public void setFallbackTemplate(String templateId) {
+        exec("PUT", "/templates/fallback", body("template_id", templateId == null ? "" : templateId));
     }
 
     // ------------------------------------------------------------------

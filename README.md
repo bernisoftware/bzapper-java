@@ -1,6 +1,6 @@
 # bZapper Java SDK
 
-Official Java client for the [bZapper](https://bzapper.com.br) WhatsApp gateway API — a
+Java client for the [bZapper](https://bzapper.com.br) WhatsApp gateway API — a
 multi-tenant WhatsApp gateway with a REST HTTP API.
 
 - Java 17+
@@ -21,17 +21,17 @@ Maven (`br.com.bernisoftware:bzapper`):
 <dependency>
   <groupId>br.com.bernisoftware</groupId>
   <artifactId>bzapper</artifactId>
-  <version>0.8.2</version>
+  <version>0.9.0</version>
 </dependency>
 ```
 
 Gradle:
 
 ```kotlin
-implementation("br.com.bernisoftware:bzapper:0.8.2")
+implementation("br.com.bernisoftware:bzapper:0.9.0")
 ```
 
-> **Pin the exact version** (`0.8.2`, not a range). Every release note states whether it
+> **Pin the exact version** (`0.9.0`, not a range). Every release note states whether it
 > changes the public surface (a breaking signature change) or is purely additive.
 
 The SDK's **only** runtime dependency is **Jackson**, pulled in **transitively** — you
@@ -163,7 +163,9 @@ client.sendList(to, "Our menu", "Tap to choose", "Open menu",
 > (worse in groups). The API **always** also delivers an equivalent **numbered text menu**
 > as a fallback, so recipients can still reply by number.
 
-Every `send*` call returns a `SentMessage` (`messageId`, `status`, `clientReference`).
+Every `send*` call returns a `SentMessage` (`messageId`, `status`, `clientReference`, and
+`delivery` — non-null only when the official rail sent the fallback template because the
+24-hour window was closed).
 
 ```java
 // OTP: the code goes on its own copyable bubble (1 logical send); body/expiry optional
@@ -207,7 +209,28 @@ client.deleteInstance(created.id());
 // Official rail (WhatsApp Cloud API) — project created with api_mode OFFICIAL
 client.createProject("Store (official)", "OFFICIAL");
 Map<String, Object> official = client.getOfficialAccount();       // GET /official/account
+client.getOfficialSignupConfig();                                 // ids for Meta's Embedded Signup popup
+client.completeOfficialSignup(code, wabaId, null);                // POST /official/embedded-signup
+client.getOfficialStatus();                                       // can_send, live check against Meta
+client.listOfficialNumbers();                                     // each has the instance_id used in sends
+client.listAvailableOfficialNumbers();                            // numbers of the WABA not connected yet
+client.addOfficialNumber(phoneNumberId);                          // `id` from the list above
+client.setDefaultOfficialNumber(numberId);
+client.disconnectOfficialNumber(numberId);
+client.updateOfficialProfile(Map.of("about", "We answer in minutes")); // send the WHOLE profile
+client.uploadOfficialProfilePhoto(Path.of("logo.png"));           // also per number: *OfficialNumberProfile*
+client.reregisterOfficialProfile();                               // after Meta approves a new display name
 client.disconnectOfficialAccount();
+
+// Templates (official rail) — the only way to open a conversation outside the 24h window
+Map<String, Object> sample = client.uploadTemplateMedia(Path.of("header.png")); // {url} for the header example
+Map<String, Object> submitted = client.createTemplate(Map.of(   // {template, advice}; 422 says what to fix
+        "name", "order_ready", "language", "pt_BR", "category", "UTILITY",
+        "body", Map.of("text", "Hi {{1}}, order {{2}} is ready.", "example", List.of("Ana", "1042"))));
+client.listTemplates();
+client.syncTemplates();                                           // import templates created in WhatsApp Manager
+client.setFallbackTemplate(templateId);                           // sendText outside the window → this template
+SentMessage t = client.sendTemplate(to, "order_ready", "pt_BR", List.of("Ana", "1042"));
 
 // Number pools (rotation)
 Map<String, Object> pool = client.createPool("Sales", "round_robin", false);

@@ -25,7 +25,21 @@ public record Instance(
         /** Code WhatsApp returned on the last rejected send. */
         @JsonProperty("last_send_error_code") Integer lastSendErrorCode,
         @JsonProperty("last_send_failure_at") String lastSendFailureAt,
-        @JsonProperty("last_send_error") String lastSendError) {
+        @JsonProperty("last_send_error") String lastSendError,
+        /**
+         * Where the number comes from: {@code unofficial} (paired by QR) or
+         * {@code official} (a Meta number — no QR, session or connection-age rule; its
+         * lifecycle is under /official/numbers).
+         */
+        @JsonProperty("rail") String rail) {
+
+    /** Constructor without {@code rail}, kept so code built against 0.8 still compiles. */
+    public Instance(String id, String phone, String nickname, String jid, String status, String statusReason,
+            String bannedUntil, String proxyUrl, String createdAt, String updatedAt, Integer consecutiveSendFailures,
+            Integer lastSendErrorCode, String lastSendFailureAt, String lastSendError) {
+        this(id, phone, nickname, jid, status, statusReason, bannedUntil, proxyUrl, createdAt, updatedAt,
+                consecutiveSendFailures, lastSendErrorCode, lastSendFailureAt, lastSendError, null);
+    }
 
     /**
      * WhatsApp's anti-spam reach-out time-lock. A per-account limit, not an

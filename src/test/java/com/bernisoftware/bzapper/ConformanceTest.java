@@ -261,6 +261,49 @@ class ConformanceTest {
         m.put("getOfficialAccount", (c, a) -> c.client.getOfficialAccount());
         m.put("connectOfficialAccount", (c, a) -> c.client.connectOfficialAccount(a.bodyAll()));
         m.put("disconnectOfficialAccount", (c, a) -> { c.client.disconnectOfficialAccount(); return null; });
+        m.put("getOfficialStatus", (c, a) -> c.client.getOfficialStatus());
+        m.put("getOfficialSignupConfig", (c, a) -> c.client.getOfficialSignupConfig());
+        m.put("completeOfficialSignup", (c, a) -> c.client.completeOfficialSignup(a.b("code"), a.b("waba_id"), a.b("phone_number_id")));
+        m.put("uploadOfficialMedia", (c, a) -> {
+            FileArg f = a.file();
+            return c.client.uploadOfficialMedia(f.content, f.filename, f.contentType, a.q("instance_id"));
+        });
+        m.put("getOfficialMedia", (c, a) -> c.client.getOfficialMedia(a.p("media_id"), a.q("instance_id")));
+        m.put("deleteOfficialMedia", (c, a) -> { c.client.deleteOfficialMedia(a.p("media_id"), a.q("instance_id")); return null; });
+        m.put("listMetaWebhookEvents", (c, a) -> c.client.listMetaWebhookEvents(a.qInt("limit"), a.qInt("before") == null ? null : a.qInt("before").longValue()));
+        m.put("listOfficialNumbers", (c, a) -> c.client.listOfficialNumbers());
+        m.put("listAvailableOfficialNumbers", (c, a) -> c.client.listAvailableOfficialNumbers());
+        m.put("addOfficialNumber", (c, a) -> c.client.addOfficialNumber(a.b("phone_number_id")));
+        m.put("setDefaultOfficialNumber", (c, a) -> { c.client.setDefaultOfficialNumber(a.p("id")); return null; });
+        m.put("disconnectOfficialNumber", (c, a) -> { c.client.disconnectOfficialNumber(a.p("id")); return null; });
+        m.put("getOfficialProfile", (c, a) -> c.client.getOfficialProfile());
+        m.put("updateOfficialProfile", (c, a) -> c.client.updateOfficialProfile(a.bodyAll()));
+        m.put("uploadOfficialProfilePhoto", (c, a) -> {
+            FileArg f = a.file();
+            return c.client.uploadOfficialProfilePhoto(f.content, f.filename, f.contentType);
+        });
+        m.put("reregisterOfficialProfile", (c, a) -> { c.client.reregisterOfficialProfile(); return null; });
+        m.put("getOfficialNumberProfile", (c, a) -> c.client.getOfficialNumberProfile(a.p("id")));
+        m.put("updateOfficialNumberProfile", (c, a) -> c.client.updateOfficialNumberProfile(a.p("id"), a.bodyAll()));
+        m.put("uploadOfficialNumberProfilePhoto", (c, a) -> {
+            String id = a.p("id");
+            FileArg f = a.file();
+            return c.client.uploadOfficialNumberProfilePhoto(id, f.content, f.filename, f.contentType);
+        });
+        m.put("reregisterOfficialNumberProfile", (c, a) -> { c.client.reregisterOfficialNumberProfile(a.p("id")); return null; });
+
+        // Templates (official rail)
+        m.put("listTemplates", (c, a) -> c.client.listTemplates());
+        m.put("createTemplate", (c, a) -> c.client.createTemplate(a.bodyAll()));
+        m.put("getTemplate", (c, a) -> c.client.getTemplate(a.p("id")));
+        m.put("deleteTemplate", (c, a) -> { c.client.deleteTemplate(a.p("id")); return null; });
+        m.put("syncTemplates", (c, a) -> c.client.syncTemplates());
+        m.put("uploadTemplateMedia", (c, a) -> {
+            FileArg f = a.file();
+            return c.client.uploadTemplateMedia(f.content, f.filename, f.contentType);
+        });
+        m.put("getFallbackTemplate", (c, a) -> c.client.getFallbackTemplate());
+        m.put("setFallbackTemplate", (c, a) -> { c.client.setFallbackTemplate(a.b("template_id")); return null; });
 
         // Groups
         m.put("listGroups", (c, a) -> c.client.listGroups(a.q("instance_id")));
@@ -299,6 +342,8 @@ class ConformanceTest {
         });
         m.put("sendButtons", (c, a) -> c.client.sendButtons(sendOptions(a), a.b("body"), a.b("footer"), buttons(a)));
         m.put("sendList", (c, a) -> c.client.sendList(sendOptions(a), a.b("body"), a.b("footer"), a.b("button_text"), sections(a)));
+        m.put("sendTemplate", (c, a) -> c.client.sendTemplate(sendOptions(a), a.b("template"), a.b("language"),
+                a.bList("variables"), a.bList("header_variables"), a.bList("button_variables"), a.b("code")));
         m.put("sendOTP", (c, a) -> c.client.sendOTP(sendOptions(a), a.b("code"), a.b("body"), a.bInt("expiry_minutes")));
         m.put("listScheduled", (c, a) -> c.client.listScheduled(a.qInt("limit")));
         m.put("cancelScheduled", (c, a) -> c.client.cancelScheduled(a.p("id")));
@@ -344,11 +389,13 @@ class ConformanceTest {
         m.put("deleteWebhook", (c, a) -> { c.client.deleteWebhook(a.p("id")); return null; });
         m.put("testWebhook", (c, a) -> c.client.testWebhook(a.p("id"), a.b("event_type")));
         m.put("listWebhookDeliveries", (c, a) -> c.client.webhookDeliveries(a.p("id"), a.qInt("limit")));
+        m.put("redeliverWebhookDelivery", (c, a) -> c.client.redeliverWebhookDelivery(a.p("id"), a.p("delivery_id")));
         m.put("triggerWebhookEvent", (c, a) -> c.client.triggerWebhookEvent(a.b("event_type")));
 
         // Connected apps (customer side of bZapper Connect)
         m.put("listConnectedApps", (c, a) -> c.client.listConnectedApps());
         m.put("revokeConnectedApp", (c, a) -> { c.client.revokeConnectedApp(a.p("id")); return null; });
+        m.put("convertConnectedAppToStandalone", (c, a) -> c.client.convertConnectedAppToStandalone(a.p("id")));
 
         // bZapper Connect — partner client (existing names: me/exchangeCode/listConnections/...)
         m.put("getPartnerMe", (c, a) -> c.partner.me());
@@ -382,7 +429,7 @@ class ConformanceTest {
     private static MediaInput media(Args a) {
         Map<String, Object> m = a.bMap("media");
         return new MediaInput((String) m.get("url"), (String) m.get("base64"), (String) m.get("caption"),
-                (String) m.get("filename"), (String) m.get("mimetype"), (Boolean) m.get("ptt"));
+                (String) m.get("filename"), (String) m.get("mimetype"), (Boolean) m.get("ptt"), (String) m.get("id"));
     }
 
     @SuppressWarnings("unchecked")
@@ -809,7 +856,7 @@ class ConformanceTest {
         }
         missing.removeAll(OPS.keySet());
         assertEquals(Set.of(), missing, "ops without an SDK method — implement and map them in OPS");
-        assertEquals(161, stringList(CASES.get("ops")).size(), "ops in cases.json");
+        assertEquals(192, stringList(CASES.get("ops")).size(), "ops in cases.json");
     }
 
     @Test
@@ -829,7 +876,7 @@ class ConformanceTest {
         assertEquals(Map.of("message_id", "m1", "status", "queued", "client_reference", "ref"), sent);
         Map<String, Object> conn = map(FIELDS.convertValue(new com.bernisoftware.bzapper.model.PartnerConnection(
                 "c1", "x", com.bernisoftware.bzapper.model.ConnectionStatus.ACTIVE, null, null, null, null, null, null,
-                null, null, null, null, null), Object.class));
+                null, null, null, null, null, null), Object.class));
         assertEquals("active", conn.get("status"));
         assertTrue(conn.containsKey("external_id"));
         assertFalse(conn.containsKey("active"), "convenience getters must not leak into the projection");

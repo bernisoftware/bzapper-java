@@ -30,6 +30,9 @@ public record PartnerConnection(
         @JsonProperty("activated_at") String activatedAt,
         @JsonProperty("suspended_at") String suspendedAt,
         @JsonProperty("revoked_at") String revokedAt,
+        /** When the customer converted this account to general use; null = still managed
+         *  by the partner, and therefore issuing no API keys of its own. */
+        @JsonProperty("standalone_at") String standaloneAt,
         @JsonProperty("created_at") String createdAt,
         /** Raw customer API key; only on exchange/rotate-key. */
         @JsonProperty("api_key") String apiKey) {
