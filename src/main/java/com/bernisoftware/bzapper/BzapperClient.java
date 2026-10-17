@@ -1546,6 +1546,25 @@ public final class BzapperClient {
         return upload("/templates/media", file);
     }
 
+    /**
+     * {@code GET /templates/otp} — {@code {template, eligibility}}: the template that carries the
+     * verification code outside the window ({@code null} when none was chosen) and whether Meta
+     * already allows Authentication templates on the account.
+     */
+    public Map<String, Object> getOTPTemplate() {
+        return getMap("/templates/otp");
+    }
+
+    /**
+     * {@code PUT /templates/otp} — choose the APPROVED Authentication template for the code (422
+     * template_not_authentication for another category).
+     *
+     * @param templateId the template id; {@code null} or {@code ""} clears the choice
+     */
+    public void setOTPTemplate(String templateId) {
+        exec("PUT", "/templates/otp", body("template_id", templateId == null ? "" : templateId));
+    }
+
     /** {@code GET /templates/fallback} — {@code {template}}: the template sent when the window is closed ({@code null} when none). */
     public Map<String, Object> getFallbackTemplate() {
         return getMap("/templates/fallback");

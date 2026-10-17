@@ -303,6 +303,8 @@ class ConformanceTest {
             FileArg f = a.file();
             return c.client.uploadTemplateMedia(f.content, f.filename, f.contentType);
         });
+        m.put("getOTPTemplate", (c, a) -> c.client.getOTPTemplate());
+        m.put("setOTPTemplate", (c, a) -> { c.client.setOTPTemplate(a.b("template_id")); return null; });
         m.put("getFallbackTemplate", (c, a) -> c.client.getFallbackTemplate());
         m.put("setFallbackTemplate", (c, a) -> { c.client.setFallbackTemplate(a.b("template_id")); return null; });
 
@@ -857,7 +859,7 @@ class ConformanceTest {
         }
         missing.removeAll(OPS.keySet());
         assertEquals(Set.of(), missing, "ops without an SDK method — implement and map them in OPS");
-        assertEquals(193, stringList(CASES.get("ops")).size(), "ops in cases.json");
+        assertEquals(195, stringList(CASES.get("ops")).size(), "ops in cases.json");
     }
 
     @Test
