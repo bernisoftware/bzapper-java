@@ -344,7 +344,7 @@ class ConformanceTest {
         m.put("sendList", (c, a) -> c.client.sendList(sendOptions(a), a.b("body"), a.b("footer"), a.b("button_text"), sections(a)));
         m.put("sendTemplate", (c, a) -> c.client.sendTemplate(sendOptions(a), a.b("template"), a.b("language"),
                 a.bList("variables"), a.bList("header_variables"), a.bList("button_variables"), a.b("code")));
-        m.put("sendOTP", (c, a) -> c.client.sendOTP(sendOptions(a), a.b("code"), a.b("body"), a.bInt("expiry_minutes")));
+        m.put("sendOTP", (c, a) -> c.client.sendOTP(sendOptions(a), a.b("code"), a.b("body"), a.bInt("expiry_minutes"), a.b("template"), a.b("language")));
         m.put("listScheduled", (c, a) -> c.client.listScheduled(a.qInt("limit")));
         m.put("cancelScheduled", (c, a) -> c.client.cancelScheduled(a.p("id")));
         m.put("presenceChat", (c, a) -> {

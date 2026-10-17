@@ -1085,10 +1085,22 @@ public final class BzapperClient {
      * the code's validity (shown to the recipient). {@code body}/{@code expiryMinutes} may be null.
      */
     public SentMessage sendOTP(SendOptions options, String code, String body, Integer expiryMinutes) {
+        return sendOTP(options, code, body, expiryMinutes, null, null);
+    }
+
+    /**
+     * {@code POST /messages/otp} — official rail: {@code template} names an approved AUTHENTICATION
+     * template to carry the code even inside the 24-hour window (without it, the project's
+     * authentication template is used only when the window is closed). Any argument may be null.
+     */
+    public SentMessage sendOTP(SendOptions options, String code, String body, Integer expiryMinutes,
+                               String template, String language) {
         Map<String, Object> payload = base(options);
         payload.put("code", code);
         if (body != null) payload.put("body", body);
         if (expiryMinutes != null) payload.put("expiry_minutes", expiryMinutes);
+        if (template != null) payload.put("template", template);
+        if (language != null) payload.put("language", language);
         return send("/messages/otp", payload, options);
     }
 
