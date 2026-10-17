@@ -264,6 +264,7 @@ class ConformanceTest {
         m.put("getOfficialStatus", (c, a) -> c.client.getOfficialStatus());
         m.put("getOfficialSignupConfig", (c, a) -> c.client.getOfficialSignupConfig());
         m.put("completeOfficialSignup", (c, a) -> c.client.completeOfficialSignup(a.b("code"), a.b("waba_id"), a.b("phone_number_id")));
+        m.put("getOfficialInsights", (c, a) -> c.client.getOfficialInsights(a.qInt("days"), a.q("from"), a.q("to")));
         m.put("uploadOfficialMedia", (c, a) -> {
             FileArg f = a.file();
             return c.client.uploadOfficialMedia(f.content, f.filename, f.contentType, a.q("instance_id"));
@@ -856,7 +857,7 @@ class ConformanceTest {
         }
         missing.removeAll(OPS.keySet());
         assertEquals(Set.of(), missing, "ops without an SDK method — implement and map them in OPS");
-        assertEquals(192, stringList(CASES.get("ops")).size(), "ops in cases.json");
+        assertEquals(193, stringList(CASES.get("ops")).size(), "ops in cases.json");
     }
 
     @Test

@@ -1326,6 +1326,15 @@ public final class BzapperClient {
     }
 
     /**
+     * {@code GET /official/insights} — estimated Meta cost (per category, month projection,
+     * previous period) and official-rail KPIs. {@code days} or {@code from}/{@code to} (RFC 3339);
+     * any argument may be null (default: last 30 days).
+     */
+    public Map<String, Object> getOfficialInsights(Integer days, String from, String to) {
+        return getMap("/official/insights" + Paths.query().add("days", days).add("from", from).add("to", to));
+    }
+
+    /**
      * {@code POST /official/media} (multipart) — uploads a file to Meta once, through the default
      * number (or {@code instanceId}), and returns its {@code id} to send as {@link MediaInput#stored(String)}
      * in many messages. Valid for 30 days, only from the number that uploaded it.
