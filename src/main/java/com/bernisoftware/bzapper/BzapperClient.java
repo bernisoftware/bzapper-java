@@ -1556,8 +1556,9 @@ public final class BzapperClient {
     }
 
     /**
-     * {@code PUT /templates/otp} — choose the APPROVED Authentication template for the code (422
-     * template_not_authentication for another category).
+     * {@code PUT /templates/otp} — choose the APPROVED template for the code: Authentication or,
+     * until Meta releases it, a provisional Utility one with a copy-code button (422
+     * template_not_otp_capable otherwise).
      *
      * @param templateId the template id; {@code null} or {@code ""} clears the choice
      */
