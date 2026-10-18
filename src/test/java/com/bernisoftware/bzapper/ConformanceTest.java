@@ -351,7 +351,8 @@ class ConformanceTest {
         m.put("sendButtons", (c, a) -> c.client.sendButtons(sendOptions(a), a.b("body"), a.b("footer"), buttons(a)));
         m.put("sendList", (c, a) -> c.client.sendList(sendOptions(a), a.b("body"), a.b("footer"), a.b("button_text"), sections(a)));
         m.put("sendTemplate", (c, a) -> c.client.sendTemplate(sendOptions(a), a.b("template"), a.b("language"),
-                a.bList("variables"), a.bList("header_variables"), a.bList("button_variables"), a.b("code")));
+                a.bList("variables"), a.bList("header_variables"), a.bList("button_variables"), a.b("code"),
+                a.b("offer_expires_at"), castCards(a.bRaw("cards"))));
         m.put("sendOTP", (c, a) -> c.client.sendOTP(sendOptions(a), a.b("code"), a.b("body"), a.bInt("expiry_minutes"), a.b("template"), a.b("language")));
         m.put("listScheduled", (c, a) -> c.client.listScheduled(a.qInt("limit")));
         m.put("cancelScheduled", (c, a) -> c.client.cancelScheduled(a.p("id")));
@@ -1077,5 +1078,10 @@ class ConformanceTest {
             all.removeAll(used);
             assertEquals(Set.of(), all, "case arguments the OPS table did not forward to the SDK");
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> castCards(Object raw) {
+        return raw == null ? null : (List<Map<String, Object>>) raw;
     }
 }

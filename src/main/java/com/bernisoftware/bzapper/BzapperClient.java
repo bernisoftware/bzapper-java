@@ -361,7 +361,20 @@ public final class BzapperClient {
      */
     public SentMessage sendTemplate(SendOptions options, String template, String language, List<String> variables,
                                     List<String> headerVariables, List<String> buttonVariables, String code) {
+        return sendTemplate(options, template, language, variables, headerVariables, buttonVariables, code, null, null);
+    }
+
+    /**
+     * {@code POST /messages/template} — the full form, with the limited-time offer deadline
+     * ({@code offerExpiresAt}, RFC 3339) and the values of each carousel card ({@code cards}: maps
+     * with {@code header_url}, {@code variables}, {@code button_variables}). Null arguments are omitted.
+     */
+    public SentMessage sendTemplate(SendOptions options, String template, String language, List<String> variables,
+                                    List<String> headerVariables, List<String> buttonVariables, String code,
+                                    String offerExpiresAt, List<Map<String, Object>> cards) {
         Map<String, Object> payload = base(options);
+        if (offerExpiresAt != null) payload.put("offer_expires_at", offerExpiresAt);
+        if (cards != null) payload.put("cards", cards);
         payload.put("template", template);
         if (language != null) payload.put("language", language);
         if (variables != null) payload.put("variables", variables);
