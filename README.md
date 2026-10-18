@@ -21,17 +21,17 @@ Maven (`br.com.bernisoftware:bzapper`):
 <dependency>
   <groupId>br.com.bernisoftware</groupId>
   <artifactId>bzapper</artifactId>
-  <version>0.15.0</version>
+  <version>0.15.1</version>
 </dependency>
 ```
 
 Gradle:
 
 ```kotlin
-implementation("br.com.bernisoftware:bzapper:0.15.0")
+implementation("br.com.bernisoftware:bzapper:0.15.1")
 ```
 
-> **Pin the exact version** (`0.15.0`, not a range). Every release note states whether it
+> **Pin the exact version** (`0.15.1`, not a range). Every release note states whether it
 > changes the public surface (a breaking signature change) or is purely additive.
 
 The SDK's **only** runtime dependency is **Jackson**, pulled in **transitively** — you
@@ -328,7 +328,7 @@ client.createSuppression("+5511977776666", "asked to stop"); // listSuppressions
 ### Bulk import (up to 1000 rows per call)
 
 `importContacts` upserts by phone: a new contact comes in as `source: import` /
-`status: pending_validation` (it still needs opt-in before a campaign), an existing one has only
+`status: pending_validation` (it can already receive campaigns and becomes active when the person replies), an existing one has only
 the informed fields updated — a blank value never erases what is there. Tags and groups are
 created on demand. A bad row lands in `errors()` and a suppressed/opted-out/blocked one in
 `skippedRows()`, **without** failing the rest of the call. Send `dryRun = true` first to validate

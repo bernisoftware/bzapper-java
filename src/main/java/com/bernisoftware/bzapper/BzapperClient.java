@@ -1767,7 +1767,7 @@ public final class BzapperClient {
      * {@code groups} (lists of keys, created on demand).
      *
      * <p>A new contact is created with {@code source: import} and {@code status:
-     * pending_validation} (it still needs opt-in before a campaign); an existing one has only the
+     * pending_validation} (it can already receive campaigns and becomes active when the person replies); an existing one has only the
      * informed fields updated — a blank value never erases what is there. A suppressed, opted-out
      * or blocked contact is reported in {@link ContactImportResult#skippedRows()} and never
      * resurrected, and a bad row lands in {@link ContactImportResult#errors()} WITHOUT failing the
@@ -1788,8 +1788,18 @@ public final class BzapperClient {
      *                             {@code import_too_large} (422)
      */
     public ContactImportResult importContacts(List<? extends Map<String, ?>> contacts, Boolean dryRun) {
+        return importContacts(contacts, dryRun, null, null);
+    }
+
+    /**
+     * {@code POST /contacts/import} with {@code tags} and {@code groups} applied to EVERY row (added
+     * to each row's own). Each row's {@code phone} takes the number or the WhatsApp LID
+     * ({@code <digits>@lid}); rows may also carry {@code lid}. Null lists are omitted.
+     */
+    public ContactImportResult importContacts(List<? extends Map<String, ?>> contacts, Boolean dryRun,
+                                              List<String> tags, List<String> groups) {
         Objects.requireNonNull(contacts, "contacts");
-        return post("/contacts/import", body("contacts", contacts, "dry_run", dryRun),
+        return post("/contacts/import", body("contacts", contacts, "dry_run", dryRun, "tags", tags, "groups", groups),
                 ContactImportResult.class);
     }
 
