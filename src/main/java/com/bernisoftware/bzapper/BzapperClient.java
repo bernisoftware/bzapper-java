@@ -1566,6 +1566,15 @@ public final class BzapperClient {
     }
 
     /**
+     * {@code POST /templates/validate} — check a template against Meta's rules without submitting
+     * (no call to Meta, no submission spent). {@code editingId} (may be null) checks an edit.
+     * Returns {@code {valid, problem?, advice?}}.
+     */
+    public Map<String, Object> validateTemplate(Map<String, Object> spec, String editingId) {
+        return postMap("/templates/validate" + query("id", editingId), spec);
+    }
+
+    /**
      * {@code GET /templates/analytics} — sent, delivered, read and failed by template in the last
      * {@code days} days (1–90; null = 30). Returns {@code {days, templates}}.
      */
@@ -1635,7 +1644,8 @@ public final class BzapperClient {
 
     /**
      * {@code PUT /templates/otp} — choose the APPROVED template for the code: Authentication or,
-     * until Meta releases it, a provisional Utility one with one body variable for the code (422
+     * until Meta releases it, a provisional one — Marketing with a copy-code button, or Utility with
+     * one body variable for the code (422
      * template_not_otp_capable otherwise).
      *
      * @param templateId the template id; {@code null} or {@code ""} clears the choice
