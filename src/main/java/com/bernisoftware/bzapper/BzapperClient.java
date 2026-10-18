@@ -449,6 +449,16 @@ public final class BzapperClient {
      * @param poolId     restrict to a pool's numbers; null for all project numbers
      * @return an estimate map {@code {recipients, numbers_available, estimated_seconds, estimated_human}}
      */
+    /**
+     * {@code GET /campaigns/meta-cost} — official rail: what Meta will charge for {@code recipients}
+     * messages of the template (on your card; bZapper charges only the subscription) and the days the
+     * number's daily new-contact limit requires. {@code language} may be null.
+     */
+    public Map<String, Object> estimateCampaignMetaCost(int recipients, String template, String language) {
+        return getMap("/campaigns/meta-cost?recipients=" + recipients + "&template=" + enc(template)
+                + (language == null ? "" : "&language=" + enc(language)));
+    }
+
     public Map<String, Object> estimateCampaign(Integer recipients, String pacing, String poolId) {
         StringBuilder path = new StringBuilder("/campaigns/estimate");
         List<String> q = new ArrayList<>();

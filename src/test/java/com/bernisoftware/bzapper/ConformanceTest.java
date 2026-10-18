@@ -364,6 +364,7 @@ class ConformanceTest {
         // Campaigns
         m.put("listCampaigns", (c, a) -> c.client.listCampaigns(a.qInt("limit")));
         m.put("createCampaign", (c, a) -> c.client.createCampaign(a.bodyAll()));
+        m.put("estimateCampaignMetaCost", (c, a) -> c.client.estimateCampaignMetaCost(a.qInt("recipients"), a.q("template"), a.q("language")));
         m.put("estimateCampaign", (c, a) -> c.client.estimateCampaign(a.qInt("recipients"), a.q("pacing"), a.q("pool_id")));
         m.put("getCampaignEligibility", (c, a) -> c.client.getCampaignEligibility(a.q("pool_id")));
         m.put("uploadCampaignMedia", (c, a) -> {
@@ -865,7 +866,7 @@ class ConformanceTest {
         }
         missing.removeAll(OPS.keySet());
         assertEquals(Set.of(), missing, "ops without an SDK method — implement and map them in OPS");
-        assertEquals(199, stringList(CASES.get("ops")).size(), "ops in cases.json");
+        assertEquals(200, stringList(CASES.get("ops")).size(), "ops in cases.json");
     }
 
     @Test
