@@ -1535,6 +1535,14 @@ public final class BzapperClient {
     }
 
     /**
+     * {@code GET /templates/analytics} — sent, delivered, read and failed by template in the last
+     * {@code days} days (1–90; null = 30). Returns {@code {days, templates}}.
+     */
+    public Map<String, Object> getTemplateAnalytics(Integer days) {
+        return getMap("/templates/analytics" + (days == null ? "" : "?days=" + days));
+    }
+
+    /**
      * {@code GET /templates/library} — Meta's Template Library: utility and authentication texts
      * Meta already approved. A template created from one without changing the text is approved at
      * once. Every filter may be null. Returns {@code {templates}}.
