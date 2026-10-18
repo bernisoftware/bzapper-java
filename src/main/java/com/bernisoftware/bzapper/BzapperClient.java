@@ -1525,6 +1525,45 @@ public final class BzapperClient {
     }
 
     /**
+     * {@code PUT /templates/{id}} — edit a template that already exists at Meta. Same body as
+     * {@link #createTemplate}; name and language do not change. Meta allows editing an APPROVED
+     * template once every 24 hours and ten times in 30 days, sends it back to review (it returns
+     * to PENDING and does not send until the decision) and keeps the category of an approved one.
+     */
+    public Map<String, Object> editTemplate(String id, Map<String, Object> spec) {
+        return requestMap("PUT", "/templates/" + seg(id, "id"), spec);
+    }
+
+    /**
+     * {@code GET /templates/library} — Meta's Template Library: utility and authentication texts
+     * Meta already approved. A template created from one without changing the text is approved at
+     * once. Every filter may be null. Returns {@code {templates}}.
+     */
+    public Map<String, Object> listLibraryTemplates(String search, String topic, String usecase,
+                                                    String industry, String language) {
+        StringBuilder path = new StringBuilder("/templates/library");
+        List<String> q = new ArrayList<>();
+        if (search != null) q.add("search=" + enc(search));
+        if (topic != null) q.add("topic=" + enc(topic));
+        if (usecase != null) q.add("usecase=" + enc(usecase));
+        if (industry != null) q.add("industry=" + enc(industry));
+        if (language != null) q.add("language=" + enc(language));
+        if (!q.isEmpty()) path.append('?').append(String.join("&", q));
+        return getMap(path.toString());
+    }
+
+    /**
+     * {@code POST /templates/library} — create a template from a Template Library item. The text
+     * is Meta's, unchanged, which is what makes it approved at once.
+     *
+     * @param req {@code library_template_name}, {@code language}; optionally {@code name},
+     *            {@code button_inputs} and {@code code_expiry_minutes}
+     */
+    public Map<String, Object> createTemplateFromLibrary(Map<String, Object> req) {
+        return postMap("/templates/library", req);
+    }
+
+    /**
      * {@code POST /templates/sync} — import templates that exist at Meta and not here (created in
      * WhatsApp Manager before bZapper, or a webhook that never arrived). Returns {@code {imported}}.
      */

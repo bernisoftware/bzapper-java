@@ -298,6 +298,10 @@ class ConformanceTest {
         m.put("createTemplate", (c, a) -> c.client.createTemplate(a.bodyAll()));
         m.put("getTemplate", (c, a) -> c.client.getTemplate(a.p("id")));
         m.put("deleteTemplate", (c, a) -> { c.client.deleteTemplate(a.p("id")); return null; });
+        m.put("editTemplate", (c, a) -> c.client.editTemplate(a.p("id"), a.bodyAll()));
+        m.put("listLibraryTemplates", (c, a) -> c.client.listLibraryTemplates(
+                a.q("search"), a.q("topic"), a.q("usecase"), a.q("industry"), a.q("language")));
+        m.put("createTemplateFromLibrary", (c, a) -> c.client.createTemplateFromLibrary(a.bodyAll()));
         m.put("syncTemplates", (c, a) -> c.client.syncTemplates());
         m.put("uploadTemplateMedia", (c, a) -> {
             FileArg f = a.file();
@@ -859,7 +863,7 @@ class ConformanceTest {
         }
         missing.removeAll(OPS.keySet());
         assertEquals(Set.of(), missing, "ops without an SDK method — implement and map them in OPS");
-        assertEquals(195, stringList(CASES.get("ops")).size(), "ops in cases.json");
+        assertEquals(198, stringList(CASES.get("ops")).size(), "ops in cases.json");
     }
 
     @Test
