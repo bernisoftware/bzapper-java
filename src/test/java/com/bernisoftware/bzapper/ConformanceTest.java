@@ -275,6 +275,7 @@ class ConformanceTest {
         m.put("listOfficialNumbers", (c, a) -> c.client.listOfficialNumbers());
         m.put("listAvailableOfficialNumbers", (c, a) -> c.client.listAvailableOfficialNumbers());
         m.put("addOfficialNumber", (c, a) -> c.client.addOfficialNumber(a.b("phone_number_id")));
+        m.put("getOfficialNumberHealth", (c, a) -> c.client.getOfficialNumberHealth(a.p("id")));
         m.put("setDefaultOfficialNumber", (c, a) -> { c.client.setDefaultOfficialNumber(a.p("id")); return null; });
         m.put("disconnectOfficialNumber", (c, a) -> { c.client.disconnectOfficialNumber(a.p("id")); return null; });
         m.put("getOfficialProfile", (c, a) -> c.client.getOfficialProfile());
@@ -866,7 +867,7 @@ class ConformanceTest {
         }
         missing.removeAll(OPS.keySet());
         assertEquals(Set.of(), missing, "ops without an SDK method — implement and map them in OPS");
-        assertEquals(200, stringList(CASES.get("ops")).size(), "ops in cases.json");
+        assertEquals(201, stringList(CASES.get("ops")).size(), "ops in cases.json");
     }
 
     @Test

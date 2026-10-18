@@ -1421,6 +1421,14 @@ public final class BzapperClient {
     }
 
     /**
+     * {@code GET /official/numbers/{id}/health} — every change of quality rating and messaging limit
+     * of the number, newest first. Returns {@code {quality_rating, messaging_limit, history}}.
+     */
+    public Map<String, Object> getOfficialNumberHealth(String id) {
+        return getMap("/official/numbers/" + seg(id, "id") + "/health");
+    }
+
+    /**
      * {@code DELETE /official/numbers/{id}} — disconnect one number. The history stays (its
      * mirror instance is archived, not deleted); removing the default promotes the oldest of
      * the remaining numbers.
