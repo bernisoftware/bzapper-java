@@ -12,20 +12,27 @@ public final class WebhookSender {
     private final String lid;
     private final String name;
     private final String phone;
+    private final String bsuid;
 
     public WebhookSender(String jid, String lid, String name) {
         this(jid, lid, name, null);
+    }
+
+    public WebhookSender(String jid, String lid, String name, String phone) {
+        this(jid, lid, name, phone, null);
     }
 
     @JsonCreator
     public WebhookSender(@JsonProperty("jid") String jid,
                          @JsonProperty("lid") String lid,
                          @JsonProperty("name") String name,
-                         @JsonProperty("phone") String phone) {
+                         @JsonProperty("phone") String phone,
+                         @JsonProperty("bsuid") String bsuid) {
         this.jid = jid;
         this.lid = lid;
         this.name = name;
         this.phone = phone;
+        this.bsuid = bsuid;
     }
 
     public String jid() {
@@ -46,5 +53,10 @@ public final class WebhookSender {
      */
     public String phone() {
         return phone;
+    }
+
+    /** Meta business-scoped user ID (official rail); {@code null} when absent. */
+    public String bsuid() {
+        return bsuid;
     }
 }
