@@ -249,6 +249,7 @@ class ConformanceTest {
         m.put("listInstances", (c, a) -> c.client.listInstances(a.q("project_id"), "1".equals(a.q("archived"))));
         m.put("createInstance", (c, a) -> c.client.createInstance(a.b("phone"), a.b("nickname"), a.b("proxy_url")));
         m.put("getInstance", (c, a) -> c.client.getInstance(a.p("id")));
+        m.put("getInstanceUptime", (c, a) -> c.client.getInstanceUptime(a.p("id")));
         m.put("deleteInstance", (c, a) -> { c.client.deleteInstance(a.p("id")); return null; });
         m.put("connectInstance", (c, a) -> c.client.connectInstance(a.p("id"), a.q("method")));
         m.put("disconnectInstance", (c, a) -> { c.client.disconnectInstance(a.p("id")); return null; });
@@ -403,6 +404,10 @@ class ConformanceTest {
         m.put("listWebhookDeliveries", (c, a) -> c.client.webhookDeliveries(a.p("id"), a.qInt("limit")));
         m.put("redeliverWebhookDelivery", (c, a) -> c.client.redeliverWebhookDelivery(a.p("id"), a.p("delivery_id")));
         m.put("triggerWebhookEvent", (c, a) -> c.client.triggerWebhookEvent(a.b("event_type")));
+
+        // AI connector (MCP)
+        m.put("listAIConnections", (c, a) -> c.client.listAIConnections());
+        m.put("revokeAIConnection", (c, a) -> { c.client.revokeAIConnection(a.p("id")); return null; });
 
         // Connected apps (customer side of bZapper Connect)
         m.put("listConnectedApps", (c, a) -> c.client.listConnectedApps());
@@ -868,7 +873,7 @@ class ConformanceTest {
         }
         missing.removeAll(OPS.keySet());
         assertEquals(Set.of(), missing, "ops without an SDK method — implement and map them in OPS");
-        assertEquals(202, stringList(CASES.get("ops")).size(), "ops in cases.json");
+        assertEquals(205, stringList(CASES.get("ops")).size(), "ops in cases.json");
     }
 
     @Test

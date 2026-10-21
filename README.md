@@ -21,17 +21,17 @@ Maven (`br.com.bernisoftware:bzapper`):
 <dependency>
   <groupId>br.com.bernisoftware</groupId>
   <artifactId>bzapper</artifactId>
-  <version>0.15.2</version>
+  <version>0.16.0</version>
 </dependency>
 ```
 
 Gradle:
 
 ```kotlin
-implementation("br.com.bernisoftware:bzapper:0.15.2")
+implementation("br.com.bernisoftware:bzapper:0.16.0")
 ```
 
-> **Pin the exact version** (`0.15.2`, not a range). Every release note states whether it
+> **Pin the exact version** (`0.16.0`, not a range). Every release note states whether it
 > changes the public surface (a breaking signature change) or is purely additive.
 
 The SDK's **only** runtime dependency is **Jackson**, pulled in **transitively** — you
@@ -191,6 +191,7 @@ import com.bernisoftware.bzapper.model.*;
 Map<String, Object> instances = client.listInstances();           // GET /instances
 Instance created = client.createInstance("+5511999999999", "Support", null); // POST /instances
 Instance one = client.getInstance(created.id());                  // GET /instances/{id}
+InstanceUptime up = client.getInstanceUptime(created.id());       // GET /instances/{id}/uptime — up.windows().last24h()
 
 // Connect by QR or pairing code
 ConnectResult qr = client.connectInstance(created.id(), "qr");    // -> qr.qrCode()
@@ -673,6 +674,15 @@ A bZapper account can see and disconnect the partner apps using its WhatsApp:
 ```java
 List<PartnerConnection> apps = client.listConnectedApps();  // GET /me/connections (partnerName, partnerLogoUrl)
 client.revokeConnectedApp(apps.get(0).id());                // DELETE /me/connections/{id} (admin) — partner key stops at once
+```
+
+### AI connector (MCP)
+
+AI apps (e.g. Claude) a person authorized to operate the account through the MCP connector:
+
+```java
+Map<String, Object> conns = client.listAIConnections(); // {data: [{id, client_name, user_email, scopes, ...}]}
+client.revokeAIConnection(connectionId);                 // DELETE /ai-connections/{id} — its tokens stop on the next call
 ```
 
 ## Errors, retries and idempotency

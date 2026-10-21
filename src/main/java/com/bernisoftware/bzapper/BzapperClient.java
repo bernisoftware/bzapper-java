@@ -13,6 +13,7 @@ import com.bernisoftware.bzapper.model.ContactImportResult;
 import com.bernisoftware.bzapper.model.Group;
 import com.bernisoftware.bzapper.model.GroupInvite;
 import com.bernisoftware.bzapper.model.Instance;
+import com.bernisoftware.bzapper.model.InstanceUptime;
 import com.bernisoftware.bzapper.model.ListSection;
 import com.bernisoftware.bzapper.model.MediaInput;
 import com.bernisoftware.bzapper.model.ParticipantAction;
@@ -563,6 +564,16 @@ public final class BzapperClient {
     }
 
     /**
+     * {@code GET /instances/{id}/uptime} — the number's availability: percent of time
+     * connected over 24h, 7d and 30d ({@code windows().last24h()} etc.; {@code null} while the
+     * history does not cover the window), since when it is in its current status, and the 20
+     * latest status changes.
+     */
+    public InstanceUptime getInstanceUptime(String id) {
+        return request("GET", "/instances/" + seg(id, "id") + "/uptime", null, InstanceUptime.class);
+    }
+
+    /**
      * {@code POST /instances/{id}/connect?method=qr|code} — start connecting.
      *
      * @param method {@code "qr"} (default) or {@code "code"}; null uses the server default
@@ -1098,6 +1109,31 @@ public final class BzapperClient {
     // ==================================================================
     // Added in the "padrão Berni r2" upgrade: one method per API operation.
     // ==================================================================
+
+    // ------------------------------------------------------------------
+    // AI connector (MCP)
+    // ------------------------------------------------------------------
+
+    /**
+     * {@code GET /ai-connections} — the AI apps (MCP clients) connected to this account,
+     * newest first: {@code {data: [...]}}, each with {@code id}, {@code client_name},
+     * {@code user_id}, {@code user_name}, {@code user_email}, {@code user_role},
+     * {@code project_ids}, {@code scopes}, {@code created_at} and {@code last_used_at}
+     * (absent until the first call). An admin sees every connection of the account; an
+     * agent only their own; an API key without a person behind it, only if it is an admin key.
+     */
+    public Map<String, Object> listAIConnections() {
+        return getMap("/ai-connections");
+    }
+
+    /**
+     * {@code DELETE /ai-connections/{id}} — revoke an AI app's access; its tokens stop
+     * working on the next call. An admin can revoke any connection of the account; an
+     * agent, only their own.
+     */
+    public void revokeAIConnection(String id) {
+        exec("DELETE", "/ai-connections/" + seg(id, "id"), null);
+    }
 
     // ------------------------------------------------------------------
     // Messages (extras)
